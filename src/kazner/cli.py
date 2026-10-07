@@ -23,6 +23,21 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fertility(args: argparse.Namespace) -> int:
+    from transformers import AutoTokenizer
+
+    from kazner.fertility import analyse_corpus, write_report
+
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+    report = analyse_corpus(
+        args.data, tokenizer, tokenizer_name=args.tokenizer, lowercase=args.lowercase
+    )
+    if args.out is not None:
+        write_report(args.out, report)
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kazner",
@@ -44,6 +59,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="IOB2 train file; its labels become the known label set (default: IOB2 syntax)",
     )
     evaluate.set_defaults(func=_cmd_evaluate)
+
+    fertility = commands.add_parser(
+        "fertility",
+        help="measure tokenizer fertility on an IOB2 corpus",
+        description="Subwords per word, split-word rate and UNK rate per split and overall.",
+    )
+    fertility.add_argument(
+        "--data", type=Path, required=True, help="directory with IOB2_{train,valid,test}.txt"
+    )
+    fertility.add_argument(
+        "--tokenizer", default="bert-base-multilingual-cased", help="Hugging Face name or path"
+    )
+    fertility.add_argument("--lowercase", action="store_true", help="lowercase words first")
+    fertility.add_argument("--out", type=Path, help="write the JSON report here")
+    fertility.set_defaults(func=_cmd_fertility)
     return parser
 
 
