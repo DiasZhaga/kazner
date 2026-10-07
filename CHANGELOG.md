@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-07
+
 ### Added
 - Package skeleton: `pyproject.toml` (src layout, pinned runtime dependencies, `dev` extra),
   `kazner` console script stub with `--version`, ruff and pytest configuration, MIT licence,
@@ -37,5 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   technology choices assessed against the Lecture 5 criteria, completed traceability
   matrix (#13).
 
-### Changed
-- Version `0.1.0rc1` (release candidate for testing the release pipeline) (#12).
+### Release notes
+- `v0.1.0rc1` was published first as a pre-release to verify the release pipeline (#12).
+
+[Unreleased]: https://github.com/DiasZhaga/kazner/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/DiasZhaga/kazner/releases/tag/v0.1.0

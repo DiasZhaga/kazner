@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kazner"
-version = "0.1.0rc1"
+version = "0.1.0"
 description = "Kazakh named entity recognition toolkit: IOB2 data, label alignment, a word-level prediction contract and evaluation."
 readme = "README.md"
 requires-python = ">=3.11"
