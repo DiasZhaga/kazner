@@ -1,0 +1,83 @@
+name: Release
+
+# Continuous DELIVERY: pushing a version tag is the deliberate, manual release decision.
+# The workflow then tests, builds and publishes the GitHub Release automatically.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  TORCH_CPU_INDEX: https://download.pytorch.org/whl/cpu
+
+jobs:
+  test:
+    name: test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Check that the tag matches the package version
+        run: |
+          python -m pip install packaging
+          python scripts/release_tools.py check "${GITHUB_REF_NAME}"
+      - name: Install CPU-only PyTorch
+        run: python -m pip install "torch>=2.5,<3" --index-url ${{ env.TORCH_CPU_INDEX }}
+      - name: Install package with dev extras
+        run: python -m pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check . && ruff format --check .
+      - name: Run offline tests
+        run: python -m pytest -m "not network and not smoke"
+
+  build:
+    name: build distributions
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install build tools
+        run: python -m pip install build packaging
+      - name: Check version and extract release notes
+        id: version
+        run: |
+          python scripts/release_tools.py check "${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          python scripts/release_tools.py notes "${GITHUB_REF_NAME}" release-notes.md
+      - name: Build wheel and sdist
+        run: python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: |
+            dist/
+            release-notes.md
+
+  publish:
+    name: publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: kazner ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: dist/*
+          prerelease: ${{ needs.build.outputs.prerelease }}
+          fail_on_unmatched_files: true
