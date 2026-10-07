@@ -26,3 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kazner.evaluate` (seqeval default mode, token accuracy, per-type scores, `metrics.json`);
   `kazner evaluate` command; `scripts/convert_pilot_predictions.py`,
   `scripts/reproduce_pilot_metrics.py`; `docs/reproduction.md` (#5).
+- Tokenizer fertility `kazner.fertility` and `kazner fertility` command: fertility, single-token
+  and split-word rates, mean subwords of split words, median, sd, maximum and UNK rate per split
+  and overall; reproduces the pilot's KazNERD numbers exactly (overall 2.325) (#6).

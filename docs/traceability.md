@@ -11,7 +11,7 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | FR1 | Load KazNERD, TWNERTC and an out-of-domain set into one word-level IOB2 format | Must | #3 | `kazner.data` | `tests/test_data.py` | Partial: KazNERD (any IOB2 corpus); TWNERTC converter and out-of-domain set not ported |
 | FR2 | Swap the backbone without duplicating code | Must | #9 | — | — | Planned (v0.2.0) |
 | FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | — | — | Planned (v0.2.0) |
-| FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align` | `tests/test_align.py` | Partial: alignment is tokenizer-agnostic (any HF fast tokenizer); fertility analysis in #6; vocabulary extension not planned for v0.1.0 |
+| FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align`, `kazner.fertility` | `tests/test_align.py`, `tests/test_fertility.py`; `docs/reproduction.md` §2 | Partial: alignment and fertility analysis work with any Hugging Face tokenizer (goal G3 baseline measured: mBERT fertility 2.325); vocabulary extension not in v0.1.0 |
 | FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | — | — | Planned (v0.2.0) |
 | FR6 | One identical evaluator for token-classification and generative models | Must | #5 | `kazner.contract`, `kazner.evaluate`, `kazner.cli` | `tests/test_contract.py`, `tests/test_evaluate.py`; `docs/reproduction.md` §1 | Met for the evaluator side: any model that writes the word-level contract is scored identically; the generative adapter (WP3) is out of scope |
 | FR7 | Aggregate across seeds as mean ± sd | Should | #10 | — | — | Planned (v0.2.0) |
