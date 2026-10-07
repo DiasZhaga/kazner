@@ -131,11 +131,30 @@ python scripts/convert_pilot_predictions.py PILOT.csv contract.csv --gold IOB2_t
 Re-scoring the pilot's files reproduces its stored metrics exactly; see
 [docs/reproduction.md](docs/reproduction.md).
 
+## Tokenizer fertility
+
+Fertility is the average number of subword tokens a tokenizer produces per word. High
+fertility means a tokenizer fragments the language: less text fits into `max_len`, and the
+model has to compose words from pieces.
+
+```bash
+kazner fertility --data data/kaznerd --tokenizer bert-base-multilingual-cased --out fertility.json
+```
+
+The command works with any Hugging Face tokenizer name or path (`--lowercase` lowercases
+words first). For each split and overall it reports words, subword tokens, fertility, the
+share of single-token and split words, the mean subwords of split words, the median, the
+standard deviation, the maximum and the UNK rate. Each word is tokenized on its own; an
+empty tokenization counts as one unknown token, as in the pilot. On full KazNERD, mBERT
+has an overall fertility of **2.325**, and **60.6%** of words are split
+([docs/reproduction.md](docs/reproduction.md)).
+
 ## Usage
 
 ```bash
 kazner --version
 kazner evaluate --help
+kazner fertility --help
 ```
 
 ## Development

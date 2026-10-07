@@ -82,4 +82,28 @@ the data-efficiency series. Both runs give F1 = 0.945.
 
 ## 2. Tokenizer fertility (#6)
 
-Pending — added with #6.
+### Command
+
+```bash
+kazner fertility --data ../ner-project/data --tokenizer bert-base-multilingual-cased   --out fertility.json
+```
+
+The full corpus (1.3 M words) runs in about 20 s on a laptop CPU, because the
+tokenization of every distinct word is cached.
+
+### Result
+
+| Split | Words | Subword tokens | Fertility | Split words | UNK rate | Max |
+|---|---|---|---|---|---|---|
+| train | 1,043,305 | 2,426,503 | 2.325785 | 60.6421% | 0.8288% | 24 |
+| validation | 129,223 | 300,050 | 2.321955 | 60.4730% | 0.7870% | 11 |
+| test | 129,824 | 301,359 | 2.321289 | 60.5527% | 0.8365% | 11 |
+| **overall** | **1,302,352** | **3,027,912** | **2.324957** | **60.6164%** | **0.8254%** | **24** |
+
+The pilot's `results/tokenizer_fertility/mbert_fertility_results.csv` was compared for
+11 metrics in each of the 4 rows: word and subword counts, fertility, single-token and
+split-word rates, mean subwords of split words, median, standard deviation, maximum, unknown
+words and UNK rate. All values are **identical** (absolute difference < 10⁻¹²).
+The expected overall fertility of 2.325 is reproduced, as is Table III of the pilot paper.
+The unit tests also compare `kazner.fertility` with a verbatim copy of the pilot's
+`RunningStats` / `TokenizerAnalyzer` on the fixtures.
