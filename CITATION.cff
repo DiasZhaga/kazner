@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "kazner: a Kazakh named entity recognition toolkit"
+type: software
+authors:
+  - family-names: Zhagaparov
+    given-names: Dias
+    affiliation: Astana IT University
+    orcid: "https://orcid.org/0009-0002-7180-4236"
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/DiasZhaga/kazner"
+keywords:
+  - named entity recognition
+  - Kazakh
+  - low-resource languages
+  - KazNERD
+  - tokenizer fertility
+references:
+  - type: conference-paper
+    title: "KazNERD: Kazakh Named Entity Recognition Dataset"
+    authors:
+      - family-names: Yeshpanov
+        given-names: Rustem
+      - family-names: Khassanov
+        given-names: Yerbolat
+      - family-names: Varol
+        given-names: Huseyin Atakan
+    collection-title: "Proceedings of the Thirteenth Language Resources and Evaluation Conference"
+    year: 2022
+    start: 417
+    end: 426
+    url: "https://aclanthology.org/2022.lrec-1.44"
+  - type: article
+    title: "Adapting Multilingual BERT for Low-Resource Kazakh NER: Data Efficiency, Parameter-Efficient Fine-Tuning, Tokenization, and Cross-Lingual Transfer"
+    authors:
+      - family-names: Zhagaparov
+        given-names: Dias
+      - family-names: Zhartybayeva
+        given-names: Makpal
+    year: 2026
+    notes: "Accepted for publication, IEEE."

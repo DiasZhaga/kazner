@@ -1,78 +1,116 @@
 # kazner
 
 [![CI](https://github.com/DiasZhaga/kazner/actions/workflows/ci.yml/badge.svg)](https://github.com/DiasZhaga/kazner/actions/workflows/ci.yml)
+[![Release](https://github.com/DiasZhaga/kazner/actions/workflows/release.yml/badge.svg)](https://github.com/DiasZhaga/kazner/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Kazakh named entity recognition toolkit: a small, tested Python package refactored from the
-pilot experiments of an MSc thesis on adapting multilingual language models (mBERT) to
-low-resource Kazakh NER on [KazNERD](https://github.com/IS2AI/KazNERD).
+**kazner** is a small, tested Python toolkit for Kazakh named entity recognition (NER). It
+provides word-level IOB2 data loading, word → subword label alignment, one prediction format
+with one evaluator for every model, and tokenizer fertility analysis.
 
-> Status: under development towards v0.1.0. Work is tracked in the
-> [issues](https://github.com/DiasZhaga/kazner/issues) and planned in [ROADMAP.md](ROADMAP.md).
+## Purpose and thesis context
 
-## Installation (development)
+kazner is the codebase of the MSc thesis *"Adaptation Methods for Large Language Models in
+Low-Resource Languages: Kazakh as a Case Study"* (Astana IT University, defence planned for
+2027). The thesis builds on a pilot study, which adapted multilingual BERT to Kazakh NER on
+KazNERD and was accepted for publication by IEEE [2]. The pilot code (`ner-project`) was a
+set of experiment scripts. Its configuration was spread across constants and command-line
+flags, and some reported numbers could not be traced to a stored result.
 
-Requires Python 3.11.
+kazner extracts the reusable parts of the pilot into a package with tests, CI/CD and
+documentation, **keeping the pilot's behaviour bit for bit** where it matters. It implements
+part of the target architecture from the course's Assignment 2: one word-level prediction
+contract scored by one evaluator (FR6), reproducible data access (NFR1) and code that runs
+identically on Windows and Linux (NFR4). It is also the practical part of Assignment 3
+(*Software Development and Integration*).
 
-Windows (PowerShell):
+## Features (v0.1.0)
+
+| Module | What it does | Pilot equivalence |
+|---|---|---|
+| `kazner.data` | Reads IOB2 files (label `0` → `O`, LF/CRLF), builds `label2id` from the full train split, deterministic subsampling, checksum-verified KazNERD download | identical output on full KazNERD |
+| `kazner.align` | First subword carries the label, continuations and special tokens get `-100`; maps predictions back to words | identical to the pilot's `tokenize_and_align` |
+| `kazner.contract` | One CSV schema `sentence_id, word_idx, word, gold, pred` for every model; validating reader; converter for the pilot's prediction files | — |
+| `kazner.evaluate` | Entity-level P/R/F1 (seqeval, default mode), token accuracy, per-type scores, `metrics.json`; offline | stored pilot metrics reproduced with difference 0 |
+| `kazner.fertility` | Subwords per word, split-word and UNK rates for any tokenizer and IOB2 corpus | identical to the pilot (overall 2.325) |
+| `kazner` CLI | `kazner evaluate`, `kazner fertility` | — |
+
+**Planned for v0.2.0** ([milestone](https://github.com/DiasZhaga/kazner/milestone/2)): YAML
+configuration with deterministic run IDs (#7), an adaptation-method registry
+(full / frozen / LoRA, #8), `kazner train` (#9), aggregation across seeds as mean ± sd (#10),
+and the training-based reproduction of the pilot's F1 = 0.9020 (#11).
+
+## Installation
+
+Requires **Python 3.11**. PyTorch is installed first, so that you choose the CPU or CUDA build
+yourself; `pip` then keeps it.
+
+**Windows (PowerShell)**
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install "torch>=2.5,<3" --index-url https://download.pytorch.org/whl/cpu    # CPU
+# NVIDIA GPU: use the cuXXX index that https://pytorch.org/get-started/locally/ lists for your driver
 python -m pip install -e ".[dev]"
 ```
 
-Linux:
+**Linux**
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
+python -m pip install "torch>=2.5,<3" --index-url https://download.pytorch.org/whl/cpu   # or a cuXXX index
 python -m pip install -e ".[dev]"
 ```
 
-## Data
+To install a released version instead, download the wheel from
+[Releases](https://github.com/DiasZhaga/kazner/releases) and run `pip install kazner-*.whl`.
+v0.1.0 needs no GPU: evaluation and fertility run on CPU.
 
-kazner reads any whitespace-separated IOB2 corpus (token in the first column, label in the
-last, blank line between sentences). The reference corpus is **KazNERD** [1]: 112,702
-sentences, 25 entity classes, splits `IOB2_train.txt` (90,228 sentences),
-`IOB2_valid.txt` (11,167) and `IOB2_test.txt` (11,307).
+## Quick start
 
 ```bash
-python scripts/download_kaznerd.py            # -> data/kaznerd/
-python scripts/download_kaznerd.py --dest D   # any other directory
+python scripts/download_kaznerd.py                       # KazNERD -> data/kaznerd/
+kazner fertility --data data/kaznerd --out fertility.json
+kazner evaluate --predictions predictions.csv --labels-from data/kaznerd/IOB2_train.txt --out metrics.json
 ```
-
-The script downloads the splits from
-[IS2AI/KazNERD](https://github.com/IS2AI/KazNERD/tree/bd4333d0f5952b9fafb2ef2ac2fefa0ad3c0333f/KazNERD)
-at a pinned commit (`bd4333d`) and verifies their SHA-256 checksums, so every run uses the
-same data version. Files that are already valid are not downloaded again.
 
 ```python
 from kazner.data import build_label2id, read_splits, sample_fraction
 
-splits = read_splits("data/kaznerd")  # {"train": (tokens, labels), ...}
+splits = read_splits("data/kaznerd")  # {"train": (tokens, labels), "validation": ..., "test": ...}
 tokens, labels = splits["train"]
 label2id, id2label = build_label2id(labels)  # always from the FULL train split
 sub_tokens, sub_labels = sample_fraction(tokens, labels, 0.10, seed=42)  # 9,023 sentences
 ```
 
-The reader behaves like the pilot code, with one deliberate change. Label `0` becomes `O`,
-and both LF and CRLF files are accepted. A row with fewer than two columns raises
-`IOB2FormatError` with its file and line number; the pilot skipped such rows silently.
+## Data and licence
 
-**Licence.** KazNERD is © ISSAI / IS2AI and distributed under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). This repository does not
-redistribute it: `data/` is git-ignored, and the test fixtures in `tests/data` are
-synthetic sentences written for the tests. If you use the data, cite [1].
+kazner reads any whitespace-separated IOB2 corpus: token in the first column, label in the
+last, a blank line between sentences. The reference corpus is **KazNERD** [1]: 112,702
+sentences in 25 entity classes, with splits `IOB2_train.txt` (90,228 sentences),
+`IOB2_valid.txt` (11,167) and `IOB2_test.txt` (11,307).
 
-[1] R. Yeshpanov, Y. Khassanov and H. A. Varol, "KazNERD: Kazakh Named Entity Recognition
-Dataset," in *Proc. 13th Language Resources and Evaluation Conference (LREC)*, Marseille,
-France, 2022, pp. 417–426. <https://aclanthology.org/2022.lrec-1.44>
+`scripts/download_kaznerd.py [--dest DIR] [--force]` downloads the splits from
+[IS2AI/KazNERD](https://github.com/IS2AI/KazNERD/tree/bd4333d0f5952b9fafb2ef2ac2fefa0ad3c0333f/KazNERD)
+at a pinned commit (`bd4333d`) and verifies their SHA-256 checksums. Every run therefore uses
+the same data version, and valid files are not downloaded again.
+
+The reader behaves like the pilot, with one deliberate change: a row with fewer than two
+columns raises `IOB2FormatError` with its file and line number. The pilot skipped such rows
+silently.
+
+**Licence.** KazNERD is © ISSAI / IS2AI and is distributed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). This repository does **not**
+redistribute it: `data/` is git-ignored, and the fixtures in `tests/data` are synthetic
+sentences written for the tests. If you use the data, cite [1].
 
 ## Label alignment
 
 Words are labelled, but models see subwords. `kazner.align` follows the pilot's rule: the
-**first subword of every word carries the word's label**, while continuation subwords and
-special tokens get `-100` and are ignored by the loss and the metrics.
+**first subword of every word carries the word's label**. Continuation subwords and special
+tokens get `-100`, so the loss and the metrics ignore them.
 
 ```text
 words      Алматыға            барды
@@ -89,13 +127,12 @@ positions = first_subword_positions(encoded.word_ids(0))  # word index -> subwor
 ```
 
 `tokenize_and_align` can be passed to `datasets.Dataset.map(..., batched=True)`. Words cut off
-by `max_len` are missing from `first_subword_positions` (see `truncated_words`). The test
-suite checks that the output matches the pilot's function exactly.
+by `max_len` are missing from `first_subword_positions` (see `truncated_words`).
 
 ## Prediction contract and evaluation
 
 Every model, encoder now and generative later, writes its test predictions in one
-word-level CSV schema. One evaluator scores every model in exactly the same way.
+word-level CSV schema, and one evaluator scores all of them in exactly the same way.
 
 | Column | Meaning |
 |---|---|
@@ -110,12 +147,12 @@ known labels. All values are read as strings, so a word such as `NA` is not turn
 missing value.
 
 ```bash
-kazner evaluate --predictions predictions.csv --out metrics.json   --labels-from data/kaznerd/IOB2_train.txt
+kazner evaluate --predictions predictions.csv --labels-from data/kaznerd/IOB2_train.txt --out metrics.json
 ```
 
 `metrics.json` holds entity-level precision, recall and F1 from seqeval, called directly in
-its default (conlleval) mode as in the pilot, plus token accuracy, per-type scores and
-counts (`n_words`, `n_truncated_words`, ...).
+its default (conlleval) mode as in the pilot. It also holds token accuracy, per-type scores
+and counts (`n_words`, `n_truncated_words`, ...).
 
 **Pilot files.** Both pilot formats map onto the contract:
 
@@ -128,77 +165,117 @@ counts (`n_words`, `n_truncated_words`, ...).
 python scripts/convert_pilot_predictions.py PILOT.csv contract.csv --gold IOB2_test.txt
 ```
 
-Re-scoring the pilot's files reproduces its stored metrics exactly; see
-[docs/reproduction.md](docs/reproduction.md).
-
 ## Tokenizer fertility
 
-Fertility is the average number of subword tokens a tokenizer produces per word. High
-fertility means a tokenizer fragments the language: less text fits into `max_len`, and the
-model has to compose words from pieces.
+Fertility is the average number of subword tokens that a tokenizer produces per word. When
+fertility is high, the tokenizer fragments the language: less text fits into `max_len`, and
+the model has to compose words from pieces.
 
 ```bash
 kazner fertility --data data/kaznerd --tokenizer bert-base-multilingual-cased --out fertility.json
 ```
 
 The command works with any Hugging Face tokenizer name or path (`--lowercase` lowercases
-words first). For each split and overall it reports words, subword tokens, fertility, the
-share of single-token and split words, the mean subwords of split words, the median, the
-standard deviation, the maximum and the UNK rate. Each word is tokenized on its own; an
-empty tokenization counts as one unknown token, as in the pilot. On full KazNERD, mBERT
-has an overall fertility of **2.325**, and **60.6%** of words are split
-([docs/reproduction.md](docs/reproduction.md)).
+words first). For each split and overall it reports:
 
-## Usage
+- words and subword tokens;
+- fertility;
+- the shares of single-token and split words;
+- the mean number of subwords of split words;
+- the median, standard deviation and maximum subwords per word;
+- the UNK rate.
+
+Each word is tokenized on its own, and an empty tokenization counts as one unknown token, as
+in the pilot.
+
+## Reproduction results
+
+Full details and commands: [docs/reproduction.md](docs/reproduction.md).
+
+| Check | Result |
+|---|---|
+| Pilot's 4 stored cross-lingual test metrics, re-scored from their prediction files | **identical**: difference 0 in P, R, F1 and accuracy (e.g. F1 0.7400769175) |
+| Same files as complete contracts (274 words truncated at `max_len = 64`, scored as `O`) | F1 lower by 0.00012–0.00085, as expected |
+| Pilot paper, Table I (fine-tuned mBERT 0.939 / 0.951 / 0.945 / 0.988) | traced to `test_predictions_mbert.csv` (a metric the pilot never saved) |
+| mBERT fertility on full KazNERD | **identical** to the pilot in all 11 metrics × 4 splits; overall **2.325**, 60.6% words split |
+
+## Testing
 
 ```bash
-kazner --version
-kazner evaluate --help
-kazner fertility --help
+pytest -m "not network and not smoke"   # offline unit tests (what CI runs on both OSs)
+pytest -m "network or smoke"            # tests that download from the Hugging Face Hub
+pytest --cov=kazner                     # with coverage
+ruff check . && ruff format --check .
 ```
 
-## Development
+Tests use synthetic fixtures and an offline WordPiece vocabulary (`tests/data`). Behaviour
+that must stay identical to the pilot is checked against **verbatim copies of the pilot
+functions** in `tests/reference/` (oracle tests). Coverage is about 99%.
 
-```bash
-pytest -m "not network and not smoke"
-ruff check .
-ruff format --check .
-```
+## CI/CD
 
-Tests that download from the Hugging Face Hub are marked `network`; end-to-end training
-tests are marked `smoke`. Run them with `pytest -m "network or smoke"`.
-
-## Continuous integration
-
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on
-pushes to `main`:
-
-| Job | Runner | What it does |
+| Workflow | Trigger | Jobs |
 |---|---|---|
-| `lint` | ubuntu | `ruff check .`, `ruff format --check .` |
-| `test (ubuntu-latest)`, `test (windows-latest)` | ubuntu, windows | CPU-only PyTorch, offline tests with coverage; `coverage.xml` uploaded as an artifact |
-| `smoke` | ubuntu | `network` and `smoke` tests, Hugging Face cache kept between runs |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | every pull request, pushes to `main` | `lint` (ruff); `test (ubuntu-latest)`, `test (windows-latest)` (CPU PyTorch, coverage artifact); `smoke` (network tests, cached HF hub) |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | tags `v*` | tag ↔ version check (PEP 440) → lint + tests → `python -m build` → GitHub Release with wheel, sdist and CHANGELOG notes |
 
-`main` is protected: merging requires a pull request with passing `lint` and both `test` jobs.
-
-### Releases (continuous delivery)
-
-[`.github/workflows/release.yml`](.github/workflows/release.yml) runs when a version tag
-`v*` is pushed. It checks that the tag equals the version in `pyproject.toml` (PEP 440
-comparison via `packaging.version.Version`, so `v0.1.0rc1` matches `0.1.0rc1`). It then runs
-lint and the offline tests, builds the wheel and sdist with `python -m build`, and publishes a
-GitHub Release with both files and the matching `CHANGELOG.md` section as notes.
-Pre-release versions (`rc`, `a`, `b`) are marked as pre-releases, and their notes come from
-`[Unreleased]` when they have no section of their own.
-
-Releasing stays a deliberate manual decision: everything is automated except pushing the
-tag, which makes this continuous delivery rather than continuous deployment.
+`main` is protected: merging requires a pull request with passing `lint` and both `test`
+jobs, and administrators cannot bypass it. Releases are **continuous delivery**: everything is
+automated except the decision to release, which is pushing a tag:
 
 ```bash
 git tag -a v0.1.0 -m "kazner 0.1.0"
 git push origin v0.1.0
 ```
 
+Pre-release versions (`0.1.0rc1`) are published as GitHub pre-releases. Contribution rules
+(branches, commits, pull requests) are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Project structure
+
+```text
+src/kazner/
+  data.py          IOB2 reader, label maps, sampling, KazNERD download
+  align.py         word -> subword label alignment
+  contract.py      word-level prediction schema, validation, pilot converter
+  evaluate.py      seqeval-based evaluator, metrics.json
+  fertility.py     tokenizer fertility analysis
+  cli.py           kazner evaluate | fertility
+scripts/           download_kaznerd.py, convert_pilot_predictions.py,
+                   reproduce_pilot_metrics.py, release_tools.py
+tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
+docs/              technology-choices.md, traceability.md, reproduction.md, challenges.md
+.github/workflows/ ci.yml, release.yml
+```
+
+Documentation:
+
+- [technology choices](docs/technology-choices.md): every tool against the Lecture 5 criteria;
+- [requirements traceability](docs/traceability.md);
+- [reproduction](docs/reproduction.md);
+- [decisions and problems log](docs/challenges.md);
+- [changelog](CHANGELOG.md).
+
+## How to cite
+
+Citation metadata is in [CITATION.cff](CITATION.cff); GitHub shows it under
+"Cite this repository".
+
+```text
+D. Zhagaparov, "kazner: a Kazakh named entity recognition toolkit," version 0.1.0, 2026.
+https://github.com/DiasZhaga/kazner
+```
+
+## References
+
+[1] R. Yeshpanov, Y. Khassanov and H. A. Varol, "KazNERD: Kazakh Named Entity Recognition
+Dataset," in *Proc. 13th Language Resources and Evaluation Conference (LREC)*, Marseille,
+France, 2022, pp. 417–426. <https://aclanthology.org/2022.lrec-1.44>
+
+[2] D. Zhagaparov and M. Zhartybayeva, "Adapting Multilingual BERT for Low-Resource Kazakh NER:
+Data Efficiency, Parameter-Efficient Fine-Tuning, Tokenization, and Cross-Lingual Transfer,"
+accepted for publication, IEEE, 2026.
+
 ## License
 
-[MIT](LICENSE).
+Code: [MIT](LICENSE). Data: see [Data and licence](#data-and-licence).
