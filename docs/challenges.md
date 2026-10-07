@@ -46,3 +46,37 @@ rewriting history.
 
 **Consequences.** Renaming a CI job now also requires updating the branch-protection rule.
 Otherwise the old required check never reports and every pull request stays blocked.
+
+## 2026-10-07 — The pilot's KazNERD copy has different checksums from the official release
+
+**Problem.** The download script (#3) was supposed to pin the data version with SHA-256
+checksums. The checksums of the pilot's `data/IOB2_*.txt` matched neither the upstream
+files nor their git blob hashes, and the files were about 7% larger. It was not clear
+whether the pilot had been trained on a different version of the corpus.
+
+**Resolution.** Each file was downloaded from IS2AI/KazNERD at commit `bd4333d` and compared
+byte by byte. The only difference is the line endings. The pilot's copy uses CRLF: there is
+exactly one extra byte per line (1,133,533 lines in train), most likely added by a Windows
+checkout. After converting CRLF to LF, all three files are identical to upstream. The
+script therefore pins the commit and the SHA-256 of the files as published (LF) and writes
+the downloaded bytes unchanged. The reader accepts both line endings, and a test checks
+that LF and CRLF files give the same result. On the full corpus, `kazner.data.read_splits`
+returns exactly the sentences and the `label2id` of the pilot code for both copies.
+
+**Consequences.** The pilot results were obtained on the official KazNERD release. A
+checksum is only a stable data version if line endings are fixed too, which is why the
+repository also enforces LF through `.gitattributes`.
+
+## 2026-10-07 — Malformed IOB2 rows: fail loudly instead of skipping
+
+**Problem.** The pilot's `read_iob2` silently skipped rows with fewer than two columns. In a
+corrupted file this would shift nothing visibly but drop tokens from sentences, and every
+downstream number would quietly change.
+
+**Resolution.** `kazner.data.read_iob2` raises `IOB2FormatError` with file name and line
+number. This is a deliberate deviation from the pilot (issue #3). It changes nothing on
+KazNERD, which has no malformed rows (the pilot's own fertility run counted 0, and the new
+reader parses all three splits). A test documents both behaviours side by side. The
+sampling functions in `run_data_efficiency.py` and `run_peft_comparison.py` were also
+compared: they are identical (same AST, both called with seed 42), so the data-efficiency
+and PEFT experiments used the same subsets for equal fractions.

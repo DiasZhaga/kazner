@@ -13,3 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   README skeleton and documentation stubs (#1).
 - GitHub Actions CI: ruff lint and format check, offline tests with coverage on Ubuntu and
   Windows with CPU-only PyTorch, network/smoke job with a cached Hugging Face hub; CI badge (#2).
+- Data module `kazner.data`: `read_iob2` / `read_splits` (label `0` → `O`, LF and CRLF,
+  `IOB2FormatError` on malformed rows), `build_label2id` from the full train split, deterministic
+  `sample_fraction` identical to the pilot, checksum-verified `download_kaznerd` pinned to
+  IS2AI/KazNERD `bd4333d`; `scripts/download_kaznerd.py`; requirements traceability matrix (#3).
