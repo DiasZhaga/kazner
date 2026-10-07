@@ -25,6 +25,9 @@ CHANGELOG = """# Changelog
 
 ## [0.0.9] - 2026-01-01
 - Old.
+
+[Unreleased]: https://github.com/o/r/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/o/r/releases/tag/v0.1.0
 """
 
 

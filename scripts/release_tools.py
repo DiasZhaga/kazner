@@ -43,7 +43,8 @@ def changelog_section(changelog: str, version: Version) -> str:
     """Body of the ``## [<version>]`` section; pre-releases fall back to ``[Unreleased]``."""
     sections: dict[str, str] = {}
     for match in re.finditer(r"^## \[([^\]]+)\][^\n]*\n(.*?)(?=^## \[|\Z)", changelog, re.M | re.S):
-        sections[match.group(1)] = match.group(2).strip()
+        body = re.sub(r"^\[[^\]]+\]: \S+\s*$", "", match.group(2), flags=re.M)  # link refs
+        sections[match.group(1)] = body.strip()
     for name, body in sections.items():
         try:
             if Version(name) == version:
