@@ -85,7 +85,7 @@ the data-efficiency series. Both runs give F1 = 0.945.
 ### Command
 
 ```bash
-kazner fertility --data ../ner-project/data --tokenizer bert-base-multilingual-cased   --out fertility.json
+kazner fertility --data ../ner-project/data --tokenizer bert-base-multilingual-cased --out fertility.json
 ```
 
 The full corpus (1.3 M words) runs in about 20 s on a laptop CPU, because the
