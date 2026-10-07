@@ -4,3 +4,7 @@ All files here are SYNTHETIC: the sentences were written for the tests and are n
 taken from KazNERD or any other corpus. `kaznerd_tiny/` mimics the KazNERD file layout
 (`IOB2_train.txt`, `IOB2_valid.txt`, `IOB2_test.txt`) and includes the edge cases the reader
 must handle: a `0` label, repeated blank lines and trailing blank lines.
+
+`tiny_wordpiece/vocab.txt` is a hand-made WordPiece vocabulary covering the fixture words, so
+tokenizer-dependent tests run offline. Some words split into several pieces on purpose
+(`Алматыға` → `Алма ##ты ##ға`); words outside the vocabulary become `[UNK]`.
