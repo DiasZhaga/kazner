@@ -53,6 +53,8 @@ where = ["src"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
+# Verbatim copies of pilot code used as test oracles; kept unformatted on purpose.
+extend-exclude = ["tests/reference"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM"]

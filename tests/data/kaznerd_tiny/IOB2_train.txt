@@ -1,0 +1,26 @@
+Асан B-PERSON
+Бекұлы I-PERSON
+Алматыға B-LOCATION
+барды O
+. O
+
+Кеше B-DATE
+университет B-ORGANISATION
+кеңесі I-ORGANISATION
+жиналды 0
+. O
+
+
+Мен O
+кітап O
+оқыдым O
+. O
+
+Қарағанды B-LOCATION
+облысында I-LOCATION
+жаңа O
+мектеп O
+ашылды O
+. O
+
+

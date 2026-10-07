@@ -20,7 +20,7 @@ coverage.xml
 htmlcov/
 
 # Data, experiment outputs and model weights (never committed)
-data/
+/data/
 runs/
 results/
 checkpoint-*/
