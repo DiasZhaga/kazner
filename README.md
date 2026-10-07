@@ -92,10 +92,50 @@ positions = first_subword_positions(encoded.word_ids(0))  # word index -> subwor
 by `max_len` are missing from `first_subword_positions` (see `truncated_words`). The test
 suite checks that the output matches the pilot's function exactly.
 
+## Prediction contract and evaluation
+
+Every model, encoder now and generative later, writes its test predictions in one
+word-level CSV schema. One evaluator scores every model in exactly the same way.
+
+| Column | Meaning |
+|---|---|
+| `sentence_id` | sentence index in the split |
+| `word_idx` | word index within the sentence, `0..n-1` |
+| `word` | the word |
+| `gold` / `pred` | gold and predicted IOB2 label |
+| `truncated` *(optional)* | `1` if the model never saw the word (cut off at `max_len`); then `pred = O` |
+
+Every gold word gets a row. The reader validates the columns, contiguous `word_idx`, and
+known labels. All values are read as strings, so a word such as `NA` is not turned into a
+missing value.
+
+```bash
+kazner evaluate --predictions predictions.csv --out metrics.json   --labels-from data/kaznerd/IOB2_train.txt
+```
+
+`metrics.json` holds entity-level precision, recall and F1 from seqeval, called directly in
+its default (conlleval) mode as in the pilot, plus token accuracy, per-type scores and
+counts (`n_words`, `n_truncated_words`, ...).
+
+**Pilot files.** Both pilot formats map onto the contract:
+
+| Pilot file | Mapping |
+|---|---|
+| `test_predictions.csv` of `run_cross_lingual_twnertc_kaznerd.py` | `sentence_id` → `sentence_id`, running index → `word_idx`, `token` → `word`, `true_label` → `gold`, `pred_label` → `pred` |
+| `test_predictions_mbert.csv` of `train_ner_mbert.py` | `sent_id` → `sentence_id`, `token_id` → `word_idx`, `token` → `word`, `gold` → `gold`, `pred` → `pred` |
+
+```bash
+python scripts/convert_pilot_predictions.py PILOT.csv contract.csv --gold IOB2_test.txt
+```
+
+Re-scoring the pilot's files reproduces its stored metrics exactly; see
+[docs/reproduction.md](docs/reproduction.md).
+
 ## Usage
 
 ```bash
 kazner --version
+kazner evaluate --help
 ```
 
 ## Development
