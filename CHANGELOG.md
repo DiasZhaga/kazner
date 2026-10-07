@@ -17,3 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `IOB2FormatError` on malformed rows), `build_label2id` from the full train split, deterministic
   `sample_fraction` identical to the pilot, checksum-verified `download_kaznerd` pinned to
   IS2AI/KazNERD `bd4333d`; `scripts/download_kaznerd.py`; requirements traceability matrix (#3).
+- Label alignment `kazner.align`: `tokenize_and_align` (first subword labelled, continuations
+  and special tokens `-100`, identical to the pilot), `first_subword_positions` and
+  `truncated_words` for mapping predictions back to words; offline tiny WordPiece tokenizer
+  for tests (#4).

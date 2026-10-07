@@ -11,7 +11,7 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | FR1 | Load KazNERD, TWNERTC and an out-of-domain set into one word-level IOB2 format | Must | #3 | `kazner.data` | `tests/test_data.py` | Partial: KazNERD (any IOB2 corpus); TWNERTC converter and out-of-domain set not ported |
 | FR2 | Swap the backbone without duplicating code | Must | #9 | — | — | Planned (v0.2.0) |
 | FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | — | — | Planned (v0.2.0) |
-| FR4 | Replace or extend the tokenizer | Must | #6 | — | — | Planned (v0.1.0) |
+| FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align` | `tests/test_align.py` | Partial: alignment is tokenizer-agnostic (any HF fast tokenizer); fertility analysis in #6; vocabulary extension not planned for v0.1.0 |
 | FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | — | — | Planned (v0.2.0) |
 | FR6 | One identical evaluator for token-classification and generative models | Must | #5 | — | — | Planned (v0.1.0) |
 | FR7 | Aggregate across seeds as mean ± sd | Should | #10 | — | — | Planned (v0.2.0) |
