@@ -28,3 +28,21 @@ recomputed on full KazNERD (#6).
 
 **Consequences.** v0.1.0 cannot train models. The requirements that depend on training stay
 open in `docs/traceability.md` and point to their v0.2.0 issues.
+
+## 2026-10-07 — Required checks cannot be chosen before CI has run once
+
+**Problem.** Branch protection on `main` can only require status checks that GitHub has
+already seen. Before #2 the repository had no workflow, so the checks did not exist yet, and
+the check names of a matrix job (`test (ubuntu-latest)`) depend on how the job is named.
+
+**Resolution.** The CI pull request was opened first, so that one run registered the checks.
+Job names were set explicitly (`name: test (${{ matrix.os }})`) to keep them stable. Then
+`main` was protected: pull request required, `lint` and both `test` jobs required,
+no bypass for administrators. `smoke` is deliberately not required, because it depends
+on the Hugging Face Hub being reachable. A deliberately failing test was then pushed to
+the same pull request. Both `test` jobs turned red and the merge button was disabled
+(screenshot kept for the report). The test was removed in a follow-up commit, without
+rewriting history.
+
+**Consequences.** Renaming a CI job now also requires updating the branch-protection rule.
+Otherwise the old required check never reports and every pull request stays blocked.
