@@ -80,3 +80,23 @@ reader parses all three splits). A test documents both behaviours side by side. 
 sampling functions in `run_data_efficiency.py` and `run_peft_comparison.py` were also
 compared: they are identical (same AST, both called with seed 42), so the data-efficiency
 and PEFT experiments used the same subsets for equal fractions.
+
+## 2026-10-07 — transformers 5 silently ignores `vocab_file` when building a tokenizer
+
+**Problem.** The alignment tests (#4) needed a tokenizer that works offline, so they build a
+tiny WordPiece tokenizer from a hand-made vocabulary in `tests/data`. In
+transformers 5.0.0, `BertTokenizer(vocab_file=...)` raised no error but ignored the file.
+The tokenizer contained only the five special tokens, and every word became `[UNK]`. A test
+that only checked the labels would still have passed. Passing the path as `vocab=` worked
+but produced a `tokenizers` deprecation warning.
+
+**Resolution.** The test fixture reads the vocabulary into a dict and passes it as `vocab=`.
+One test asserts the exact pieces (`Алматыға` → `Алма ##ты ##ға`), so a tokenizer that
+falls back to `[UNK]` makes the suite fail. Suites are also run with
+`-W error::DeprecationWarning` locally.
+
+**Also checked.** A word that tokenizes to zero subwords would make position-based mapping
+of predictions back to words unreliable. The pilot's `train_ner_mbert.py` export relied on
+such positional counting. With the mBERT tokenizer no KazNERD word in any split produces
+zero subwords, so the pilot's exported predictions are aligned correctly. `kazner` maps by
+`word_id` anyway (`first_subword_positions`).

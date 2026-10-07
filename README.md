@@ -68,6 +68,30 @@ synthetic sentences written for the tests. If you use the data, cite [1].
 Dataset," in *Proc. 13th Language Resources and Evaluation Conference (LREC)*, Marseille,
 France, 2022, pp. 417–426. <https://aclanthology.org/2022.lrec-1.44>
 
+## Label alignment
+
+Words are labelled, but models see subwords. `kazner.align` follows the pilot's rule: the
+**first subword of every word carries the word's label**, while continuation subwords and
+special tokens get `-100` and are ignored by the loss and the metrics.
+
+```text
+words      Алматыға            барды
+subwords   [CLS] Алма ##ты ##ға  барды [SEP]
+labels      -100   B  -100 -100    O   -100
+```
+
+```python
+from kazner.align import first_subword_positions, tokenize_and_align
+
+batch = {"tokens": tokens, "labels_str": labels}  # word level, as read by kazner.data
+encoded = tokenize_and_align(batch, tokenizer, label2id, max_len=128)
+positions = first_subword_positions(encoded.word_ids(0))  # word index -> subword position
+```
+
+`tokenize_and_align` can be passed to `datasets.Dataset.map(..., batched=True)`. Words cut off
+by `max_len` are missing from `first_subword_positions` (see `truncated_words`). The test
+suite checks that the output matches the pilot's function exactly.
+
 ## Usage
 
 ```bash
