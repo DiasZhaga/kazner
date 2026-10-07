@@ -181,6 +181,24 @@ pushes to `main`:
 
 `main` is protected: merging requires a pull request with passing `lint` and both `test` jobs.
 
+### Releases (continuous delivery)
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs when a version tag
+`v*` is pushed. It checks that the tag equals the version in `pyproject.toml` (PEP 440
+comparison via `packaging.version.Version`, so `v0.1.0rc1` matches `0.1.0rc1`). It then runs
+lint and the offline tests, builds the wheel and sdist with `python -m build`, and publishes a
+GitHub Release with both files and the matching `CHANGELOG.md` section as notes.
+Pre-release versions (`rc`, `a`, `b`) are marked as pre-releases, and their notes come from
+`[Unreleased]` when they have no section of their own.
+
+Releasing stays a deliberate manual decision: everything is automated except pushing the
+tag, which makes this continuous delivery rather than continuous deployment.
+
+```bash
+git tag -a v0.1.0 -m "kazner 0.1.0"
+git push origin v0.1.0
+```
+
 ## License
 
 [MIT](LICENSE).
