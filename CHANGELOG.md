@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow (continuous delivery): on `v*` tags, PEP 440 tag/version check, lint and
   tests, `python -m build`, GitHub Release with wheel, sdist and CHANGELOG notes; pre-releases
   marked automatically (#12).
+- Documentation: full README (purpose, installation with CPU/CUDA PyTorch, quick start,
+  reproduction results, CI/CD, structure, citation), `CITATION.cff`, `CONTRIBUTING.md`,
+  technology choices assessed against the Lecture 5 criteria, completed traceability
+  matrix (#13).
 
 ### Changed
 - Version `0.1.0rc1` (release candidate for testing the release pipeline) (#12).
