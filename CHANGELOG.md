@@ -21,3 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and special tokens `-100`, identical to the pilot), `first_subword_positions` and
   `truncated_words` for mapping predictions back to words; offline tiny WordPiece tokenizer
   for tests (#4).
+- Prediction contract `kazner.contract` (`sentence_id, word_idx, word, gold, pred` + optional
+  `truncated`; validating reader; converter for both pilot prediction formats) and evaluator
+  `kazner.evaluate` (seqeval default mode, token accuracy, per-type scores, `metrics.json`);
+  `kazner evaluate` command; `scripts/convert_pilot_predictions.py`,
+  `scripts/reproduce_pilot_metrics.py`; `docs/reproduction.md` (#5).

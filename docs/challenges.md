@@ -100,3 +100,39 @@ of predictions back to words unreliable. The pilot's `train_ner_mbert.py` export
 such positional counting. With the mBERT tokenizer no KazNERD word in any split produces
 zero subwords, so the pilot's exported predictions are aligned correctly. `kazner` maps by
 `word_id` anyway (`first_subword_positions`).
+
+## 2026-10-07 — Words lost to truncation: score them, but measure the effect first
+
+**Problem.** The pilot scored only the words that fitted into `max_len` subwords. Words
+beyond that were never predicted and silently left out of P/R/F1. A word-level contract
+that "contains every gold word" has to decide what such words get. While planning, these
+words were first described as containing "no entity starts", and the user asked for a
+stricter check. It turned out that this check alone was misleading. At `max_len = 128`, the
+5 lost test words carry `I-LAW O O O O`, so one `LAW` entity is cut. At `max_len = 64`
+(cross-lingual runs), 274 test words are lost.
+
+**Resolution.** Truncated words are scored with `pred = O` and flagged by an optional
+`truncated` column, and `metrics.json` reports `n_truncated_words`. A model is thus
+penalised for what it cannot see, rather than having its F1 quietly computed on fewer
+words. The effect was measured on the pilot's own prediction files
+(`docs/reproduction.md`): F1 changes by −0.00012 to −0.00085 at `max_len = 64` and by 0 at
+`max_len = 128`. The pilot-compatible number is still available by scoring the file as the
+pilot wrote it.
+
+**Consequences.** From v0.2.0 on, thesis numbers are contract-based. They are slightly
+lower than Trainer-based numbers whenever sentences are truncated. Both values are stored
+(#9), and the reproduction check (#11) compares the Trainer-based one with the pilot.
+
+## 2026-10-07 — The pilot paper's Table I could not be traced to a stored metric
+
+**Problem.** Table I of the pilot paper reports fine-tuned mBERT at
+P/R/F1/acc = 0.939 / 0.951 / 0.945 / 0.988. No metrics file in the pilot repository has
+these values. The closest one, the 100% data-efficiency run, has recall 0.9515, which
+rounds to 0.952.
+
+**Resolution.** The new evaluator re-scored `results/test_predictions_mbert.csv`, written by
+`train_ner_mbert.py`, which printed its metrics but never saved them. The result was
+0.93945 / 0.95107 / 0.94522 / 0.98804, i.e. exactly Table I. The table is therefore
+traceable to that run (full train split, 1 epoch, batch 8). This is the kind of drift that
+run IDs (NFR2, #7) are meant to prevent: a published number whose only record was console
+output.
