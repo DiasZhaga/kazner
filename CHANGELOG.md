@@ -29,3 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tokenizer fertility `kazner.fertility` and `kazner fertility` command: fertility, single-token
   and split-word rates, mean subwords of split words, median, sd, maximum and UNK rate per split
   and overall; reproduces the pilot's KazNERD numbers exactly (overall 2.325) (#6).
+- Release workflow (continuous delivery): on `v*` tags, PEP 440 tag/version check, lint and
+  tests, `python -m build`, GitHub Release with wheel, sdist and CHANGELOG notes; pre-releases
+  marked automatically (#12).
+
+### Changed
+- Version `0.1.0rc1` (release candidate for testing the release pipeline) (#12).
