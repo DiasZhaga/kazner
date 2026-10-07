@@ -29,6 +29,45 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
+## Data
+
+kazner reads any whitespace-separated IOB2 corpus (token in the first column, label in the
+last, blank line between sentences). The reference corpus is **KazNERD** [1]: 112,702
+sentences, 25 entity classes, splits `IOB2_train.txt` (90,228 sentences),
+`IOB2_valid.txt` (11,167) and `IOB2_test.txt` (11,307).
+
+```bash
+python scripts/download_kaznerd.py            # -> data/kaznerd/
+python scripts/download_kaznerd.py --dest D   # any other directory
+```
+
+The script downloads the splits from
+[IS2AI/KazNERD](https://github.com/IS2AI/KazNERD/tree/bd4333d0f5952b9fafb2ef2ac2fefa0ad3c0333f/KazNERD)
+at a pinned commit (`bd4333d`) and verifies their SHA-256 checksums, so every run uses the
+same data version. Files that are already valid are not downloaded again.
+
+```python
+from kazner.data import build_label2id, read_splits, sample_fraction
+
+splits = read_splits("data/kaznerd")  # {"train": (tokens, labels), ...}
+tokens, labels = splits["train"]
+label2id, id2label = build_label2id(labels)  # always from the FULL train split
+sub_tokens, sub_labels = sample_fraction(tokens, labels, 0.10, seed=42)  # 9,023 sentences
+```
+
+The reader behaves like the pilot code, with one deliberate change. Label `0` becomes `O`,
+and both LF and CRLF files are accepted. A row with fewer than two columns raises
+`IOB2FormatError` with its file and line number; the pilot skipped such rows silently.
+
+**Licence.** KazNERD is © ISSAI / IS2AI and distributed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). This repository does not
+redistribute it: `data/` is git-ignored, and the test fixtures in `tests/data` are
+synthetic sentences written for the tests. If you use the data, cite [1].
+
+[1] R. Yeshpanov, Y. Khassanov and H. A. Varol, "KazNERD: Kazakh Named Entity Recognition
+Dataset," in *Proc. 13th Language Resources and Evaluation Conference (LREC)*, Marseille,
+France, 2022, pp. 417–426. <https://aclanthology.org/2022.lrec-1.44>
+
 ## Usage
 
 ```bash
