@@ -169,3 +169,32 @@ silently compare strings.
 string is a `ConfigError` naming the key. A test covers `5e-5`. The example configs use
 `5.0e-5` so that they read the same in any YAML parser.
 
+## 2026-10-13 — The paper's LoRA parameter count includes an unused copy of the classifier
+
+**Problem.** The pilot paper reports 373,350 trainable parameters (0.210%) for LoRA on mBERT.
+With `TaskType.TOKEN_CLS`, PEFT wraps the classifier in a `ModulesToSaveWrapper`. The wrapper
+keeps the original head and trains a copy (`modules_to_save.default`). The pilot then set
+`requires_grad = True` on both. Only the copy is used in the forward pass, so the original
+never receives a gradient, yet it was counted.
+
+**Resolution.** `kazner.methods.count_parameters` skips parameters under `.original_module.`.
+On mBERT with the 51 KazNERD labels this gives **334,131 of 177,596,979 (0.188%)**: 294,912 LoRA
+weights plus 39,219 for the head. The pilot's counting is kept as `trainable_params_pilot` and
+reproduces the paper exactly (373,350 of 177,636,198 = 0.2102%). A test on a tiny BERT
+checks both formulas. Training is unaffected: the extra parameters get no gradient.
+
+**Consequences.** The thesis reports the corrected share and notes the difference from the
+paper. The conclusions do not change, since LoRA still trains about 0.2% of the parameters.
+
+## 2026-10-13 — Loading a head for a different label set fails in transformers 5
+
+**Problem.** The network test with `hf-internal-testing/tiny-random-bert` failed with
+"You set `ignore_mismatched_sizes` to `False`". The checkpoint already contains a
+token-classification head for another number of labels, and transformers 5 refuses to drop
+it silently.
+
+**Resolution.** `build_model` always passes `ignore_mismatched_sizes=True`, because kazner
+always creates a fresh head for its own label set. The pilot's cross-lingual pipeline did the
+same when loading the Turkish checkpoint. For mBERT, which has no head, nothing changes, and
+the parameter counts above confirm it.
+

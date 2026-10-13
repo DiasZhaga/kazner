@@ -214,6 +214,23 @@ changes it. `name` and `output_root` are labels and are not hashed. Each run dir
 records `config.json` and `environment.json`, which holds the full commit, the tree hash,
 dirty flags, library versions, OS, CUDA and GPU.
 
+## Adaptation methods
+
+Adaptation methods are chosen by name in the config (`method.name`). `kazner.methods` is a
+registry (Factory Method): adding a method costs one `@register_method("name")` function and one
+config value.
+
+| Method | What is trained | mBERT, 51 KazNERD labels |
+|---|---|---|
+| `full` | everything | 177,302,067 (100%) |
+| `frozen` | the token-classification head only | 39,219 (0.022%) |
+| `lora` | LoRA adapters on attention `query` / `value` + the head (`r`, `alpha`, `dropout`, `target_modules` from config; defaults 8, 16, 0.1) | 334,131 (0.188%) |
+
+Models are built exactly as in the pilot. The LoRA count excludes the inactive copy of the
+classifier that PEFT keeps when it trains `modules_to_save`. The pilot counted that copy and
+reported 373,350 (0.210%); this value is kept as `trainable_params_pilot` for comparison with
+the paper.
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -267,6 +284,7 @@ src/kazner/
   evaluate.py      seqeval-based evaluator, metrics.json
   fertility.py     tokenizer fertility analysis
   config.py        YAML config, run IDs, environment snapshot
+  methods.py       adaptation-method registry: full | frozen | lora
   cli.py           kazner evaluate | fertility
 scripts/           download_kaznerd.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and invalid values name the key), pilot defaults, seed lists expanded into runs, deterministic
   run IDs from the resolved config and the git tree hash of `src/kazner`, `config.json` and
   `environment.json` per run; `configs/pilot_full_10pct.yaml` (#7).
+- Adaptation-method registry `kazner.methods` (Factory Method): `full`, `frozen`, `lora`, built as
+  in the pilot; correct trainable-parameter counts plus the pilot's counting as
+  `trainable_params_pilot` (#8).
 
 ## [0.1.0] - 2026-10-07
 

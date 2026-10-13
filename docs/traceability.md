@@ -10,7 +10,7 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 |---|---|---|---|---|---|---|
 | FR1 | Load KazNERD, TWNERTC and an out-of-domain set into one word-level IOB2 format | Must | #3 | `kazner.data` | `tests/test_data.py` | Partial: KazNERD (any IOB2 corpus); TWNERTC converter and out-of-domain set not ported |
 | FR2 | Swap the backbone without duplicating code | Must | #9 | — | — | Planned (v0.2.0) |
-| FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | — | — | Planned (v0.2.0) |
+| FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | `kazner.methods` | `tests/test_methods.py` | Partial: full / frozen / LoRA selectable by name; QLoRA and few-shot prompting (WP3) not yet |
 | FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align`, `kazner.fertility` | `tests/test_align.py`, `tests/test_fertility.py`; `docs/reproduction.md` §2 | Partial: alignment and fertility analysis work with any Hugging Face tokenizer (goal G3 baseline measured: mBERT fertility 2.325); vocabulary extension not in v0.1.0 |
 | FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | `kazner.config`, `configs/` | `tests/test_config.py` | Partial: seeds and all hyper-parameters in YAML, seed lists expand into runs; grid sweeps are separate YAML files; used by training in #9 |
 | FR6 | One identical evaluator for token-classification and generative models | Must | #5 | `kazner.contract`, `kazner.evaluate`, `kazner.cli` | `tests/test_contract.py`, `tests/test_evaluate.py`; `docs/reproduction.md` §1 | Met for the evaluator side: any model that writes the word-level contract is scored identically; the generative adapter (WP3) is out of scope |
@@ -21,7 +21,7 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | NFR3 | Fit 6 GB VRAM through FP16 / 4-bit quantisation | Must | #9 | — | — | Planned (v0.2.0) |
 | NFR4 | Portability: identical code on Windows and Linux | Should | #2 | `.github/workflows/ci.yml` | CI matrix `ubuntu-latest` + `windows-latest` | Met |
 | NFR5 | Fault tolerance: resume a series after interruption | Should | #9 | — | — | Planned (v0.2.0) |
-| NFR6 | Modifiability: a new model or method = one module + one config | Should | #8 | — | — | Planned (v0.2.0) |
+| NFR6 | Modifiability: a new model or method = one module + one config | Should | #8 | `kazner.methods` | `tests/test_methods.py` (a custom method is registered in a test) | Met for adaptation methods: one `@register_method` function + one config value |
 | NFR7 | No credentials in the repository; data licences respected | Could | #1, #3 | `.gitignore`, `scripts/download_kaznerd.py` | — | Met: `.env`/data ignored; KazNERD (CC BY 4.0) downloaded, never redistributed |
 
 ## Issue → requirement → verification (v0.1.0)
