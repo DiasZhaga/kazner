@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configuration layer `kazner.config`: YAML → frozen dataclasses with validation (unknown keys
+  and invalid values name the key), pilot defaults, seed lists expanded into runs, deterministic
+  run IDs from the resolved config and the git tree hash of `src/kazner`, `config.json` and
+  `environment.json` per run; `configs/pilot_full_10pct.yaml` (#7).
+
 ## [0.1.0] - 2026-10-07
 
 ### Added

@@ -12,12 +12,12 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | FR2 | Swap the backbone without duplicating code | Must | #9 | — | — | Planned (v0.2.0) |
 | FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | — | — | Planned (v0.2.0) |
 | FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align`, `kazner.fertility` | `tests/test_align.py`, `tests/test_fertility.py`; `docs/reproduction.md` §2 | Partial: alignment and fertility analysis work with any Hugging Face tokenizer (goal G3 baseline measured: mBERT fertility 2.325); vocabulary extension not in v0.1.0 |
-| FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | — | — | Planned (v0.2.0) |
+| FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | `kazner.config`, `configs/` | `tests/test_config.py` | Partial: seeds and all hyper-parameters in YAML, seed lists expand into runs; grid sweeps are separate YAML files; used by training in #9 |
 | FR6 | One identical evaluator for token-classification and generative models | Must | #5 | `kazner.contract`, `kazner.evaluate`, `kazner.cli` | `tests/test_contract.py`, `tests/test_evaluate.py`; `docs/reproduction.md` §1 | Met for the evaluator side: any model that writes the word-level contract is scored identically; the generative adapter (WP3) is out of scope |
 | FR7 | Aggregate across seeds as mean ± sd | Should | #10 | — | — | Planned (v0.2.0) |
 | FR8 | Regenerate every thesis table and figure from stored results | Should | — | — | — | Out of scope |
-| NFR1 | Reproducibility: pinned environment, data version, config snapshot per run | Must | #1, #3, #12, #7 | `pyproject.toml`, `kazner.data`, `.github/workflows/release.yml` | `tests/test_data.py`, `tests/test_release_tools.py` | Partial: pinned dependencies; data pinned to IS2AI/KazNERD `bd4333d` with SHA-256; versioned releases with wheel + sdist; per-run config snapshot in #7 (v0.2.0) |
-| NFR2 | Traceability: every number maps to one run ID, configuration and commit | Must | #7 | — | — | Planned (v0.2.0) |
+| NFR1 | Reproducibility: pinned environment, data version, config snapshot per run | Must | #1, #3, #7, #12 | `pyproject.toml`, `kazner.data`, `.github/workflows/release.yml` | `tests/test_data.py`, `tests/test_release_tools.py` | Partial: pinned dependencies; data pinned to IS2AI/KazNERD `bd4333d` with SHA-256; versioned releases with wheel + sdist; per-run `config.json` + `environment.json` (#7) |
+| NFR2 | Traceability: every number maps to one run ID, configuration and commit | Must | #7, #9 | `kazner.config` | `tests/test_config.py` | Partial: deterministic run ID (config + code tree hash), `config.json` and `environment.json` with the commit; written for every training run from #9 on |
 | NFR3 | Fit 6 GB VRAM through FP16 / 4-bit quantisation | Must | #9 | — | — | Planned (v0.2.0) |
 | NFR4 | Portability: identical code on Windows and Linux | Should | #2 | `.github/workflows/ci.yml` | CI matrix `ubuntu-latest` + `windows-latest` | Met |
 | NFR5 | Fault tolerance: resume a series after interruption | Should | #9 | — | — | Planned (v0.2.0) |

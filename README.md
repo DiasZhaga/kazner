@@ -188,6 +188,32 @@ words first). For each split and overall it reports:
 Each word is tokenized on its own, and an empty tokenization counts as one unknown token, as
 in the pilot.
 
+## Configuration and run IDs
+
+Every experiment is one YAML file, which is loaded into frozen, validated dataclasses
+(`kazner.config`). Unknown keys and invalid values are errors that name the key
+(`training.lr: unknown key (did you mean 'learning_rate'?)`). Defaults equal the pilot's
+`TrainingArguments`. Relative paths are resolved against the YAML file's directory.
+
+```yaml
+# configs/pilot_full_10pct.yaml (abridged)
+name: pilot_full_10pct
+data: {dir: ../data/kaznerd, train_fraction: 0.10, subsample_seed: 42}
+model: {name: bert-base-multilingual-cased, max_len: 128}
+method: {name: full}            # full | frozen | lora (+ lora: {r, alpha, dropout, target_modules})
+training: {learning_rate: 5.0e-5, epochs: 3, train_batch_size: 4, grad_accumulation: 2}
+seeds: [42]                     # a list expands into one run per seed
+output_root: ../runs
+```
+
+Each run gets a deterministic **run ID**: the first 12 hex characters of
+sha256(resolved single-seed config + code reference). The code reference is the git tree
+hash of `src/kazner` (`git rev-parse HEAD:src/kazner`). Commits that touch only
+documentation, configs or CI therefore keep the ID, while any change to the package code
+changes it. `name` and `output_root` are labels and are not hashed. Each run directory
+records `config.json` and `environment.json`, which holds the full commit, the tree hash,
+dirty flags, library versions, OS, CUDA and GPU.
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -240,6 +266,7 @@ src/kazner/
   contract.py      word-level prediction schema, validation, pilot converter
   evaluate.py      seqeval-based evaluator, metrics.json
   fertility.py     tokenizer fertility analysis
+  config.py        YAML config, run IDs, environment snapshot
   cli.py           kazner evaluate | fertility
 scripts/           download_kaznerd.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
