@@ -136,3 +136,36 @@ rounds to 0.952.
 traceable to that run (full train split, 1 epoch, batch 8). This is the kind of drift that
 run IDs (NFR2, #7) are meant to prevent: a published number whose only record was console
 output.
+
+## 2026-10-13 — Run IDs keyed on the code tree, not on the commit
+
+**Problem.** Assignment 2 defined the run ID as a hash of the configuration and the git
+*commit*. With that definition, every documentation-only commit would change every run ID.
+Already completed runs would then look new, and the idempotent runner (#9) would retrain
+them, which costs hours of GPU time for nothing.
+
+**Resolution.** The run ID is the hash of the resolved single-seed configuration plus the
+git tree hash of `src/kazner` (`git rev-parse HEAD:src/kazner`). This refines the
+Assignment 2 architecture. The full commit hash is still stored in `environment.json`, so
+traceability to a commit is not lost. Tests on a temporary repository check that a
+docs-only commit keeps the ID and that a code commit changes it. `name` and `output_root`
+are excluded from the hash, because they label or place a run without changing what it
+computes.
+
+**Limitations.** Changes outside `src/kazner`, such as dependency pins in `pyproject.toml`,
+do not change the ID; they are recorded in `environment.json`. Uncommitted changes under
+`src/kazner` are flagged with a warning and `package_dirty: true`, because the tree hash
+then does not describe the code that actually ran. Outside a git checkout (an installed
+wheel), the package version is used as the code reference.
+
+## 2026-10-13 — PyYAML reads `5e-5` as a string
+
+**Problem.** YAML 1.1, which PyYAML implements, only recognises a float when it contains a
+dot. `learning_rate: 5e-5` is therefore loaded as the string `"5e-5"`, while `5.0e-5` is
+loaded as a number. A naive loader would either crash late inside the Trainer or, worse,
+silently compare strings.
+
+**Resolution.** Float fields accept numeric strings explicitly and convert them; any other
+string is a `ConfigError` naming the key. A test covers `5e-5`. The example configs use
+`5.0e-5` so that they read the same in any YAML parser.
+
