@@ -38,6 +38,21 @@ def _cmd_fertility(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_train(args: argparse.Namespace) -> int:
+    import os
+
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    from kazner.config import load_config
+    from kazner.train import run_experiment
+
+    results = run_experiment(
+        load_config(args.config), force=args.force, max_train_samples=args.max_train_samples
+    )
+    done = sum(r["status"] == "done" for r in results)
+    print(f"{done} run(s) trained, {len(results) - done} skipped")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kazner",
@@ -74,6 +89,20 @@ def build_parser() -> argparse.ArgumentParser:
     fertility.add_argument("--lowercase", action="store_true", help="lowercase words first")
     fertility.add_argument("--out", type=Path, help="write the JSON report here")
     fertility.set_defaults(func=_cmd_fertility)
+
+    train = commands.add_parser(
+        "train",
+        help="train every seed of an experiment config",
+        description="Train, evaluate and write metrics and contract predictions per run ID.",
+    )
+    train.add_argument("--config", type=Path, required=True, help="experiment YAML file")
+    train.add_argument("--force", action="store_true", help="re-run completed run IDs")
+    train.add_argument(
+        "--max-train-samples",
+        type=int,
+        help="use only the first N sampled training sentences (changes the run ID)",
+    )
+    train.set_defaults(func=_cmd_train)
     return parser
 
 
