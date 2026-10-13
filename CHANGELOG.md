@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-seed aggregation `kazner aggregate` (`kazner.aggregate`): mean, sample sd and n per group
   of config fields, CSV output, warnings for incomplete runs and mixed code versions (#10).
 
+- Reproduction of the pilot's F1 = 0.9020 by `kazner train` (bit-identical test metrics), the
+  three-seed PEFT comparison and the LoRA learning-rate × rank screen, recorded in
+  `docs/reproduction.md` §3–4 (#11).
+
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
   instead of the data path, so the same experiment gets the same ID from any config (#9).
