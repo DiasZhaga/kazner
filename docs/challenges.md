@@ -224,3 +224,12 @@ share IDs (14 distinct runs instead of 15). `config.json` records the fingerprin
   F1 is reported only for the chosen setting, which is then re-run with three seeds. Choosing
   by test F1 would overfit the test set.
 
+## 2026-10-13 — Aggregation warns on mixed code versions, not on mixed commits
+
+Issue #10 asked for a warning when a group mixes runs from different git commits. Since #7,
+however, a documentation-only commit deliberately keeps run IDs, so runs from different
+commits can be identical computations. A warning on every such group would be noise. The
+aggregator therefore warns when a group mixes different `src/kazner` tree hashes
+(`environment.json → code.code_ref`), which is exactly when the code that produced the
+numbers differs.
+

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the model is built, contract predictions, `metrics.json` with contract- and Trainer-based test
   metrics plus validation history, idempotent runs (`--force`, `--max-train-samples`), CPU smoke
   test in CI; configs for the multi-seed PEFT comparison and the LoRA screen (#9).
+- Multi-seed aggregation `kazner aggregate` (`kazner.aggregate`): mean, sample sd and n per group
+  of config fields, CSV output, warnings for incomplete runs and mixed code versions (#10).
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
