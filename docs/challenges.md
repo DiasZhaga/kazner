@@ -198,3 +198,29 @@ always creates a fresh head for its own label set. The pilot's cross-lingual pip
 same when loading the Turkish checkpoint. For mBERT, which has no head, nothing changes, and
 the parameter counts above confirm it.
 
+## 2026-10-13 — The same experiment got two run IDs because the data path was hashed
+
+**Problem.** While writing the configs for experiments B and C, two configs described exactly
+the same run: LoRA, lr 1e-4, r 8, seed 42, 10% KazNERD. One lives in `configs/`
+(`data.dir: ../data/kaznerd`), the other in `configs/lora_sweep/` (`../../data/kaznerd`). The
+run ID from #7 hashed `data.dir` as written, so the two configs produced different IDs, and the
+same hour-long run would have been trained twice. The same would happen on any machine where
+the data lives somewhere else.
+
+**Resolution.** A path is a location, not content. `data.dir` is removed from the hashed
+config, and `data_fingerprint` (SHA-256 over the split files, with CRLF normalised to LF) is
+hashed instead. The same KazNERD release therefore gives the same ID from any directory and
+with any line endings, while changed data gives a new ID. Across the 10 configs, two pairs now
+share IDs (14 distinct runs instead of 15). `config.json` records the fingerprint.
+
+## 2026-10-13 — Experiment design: seed scope, LoRA scaling and selection on validation
+
+- **Seeds.** In experiment B only the training seed varies (42, 43, 44). The 10% subset stays
+  fixed (`subsample_seed: 42`, as in the pilot), so the spread measures training variance,
+  not sampling variance. Sampling variance is a separate question for later.
+- **LoRA screen (C).** `alpha = 2r` keeps the LoRA scaling `alpha / r` constant when r goes
+  from 8 to 16, so the screen varies capacity and learning rate, not the effective step size.
+- **Selection.** The best LoRA setting is chosen by `validation_best` in `metrics.json`. Test
+  F1 is reported only for the chosen setting, which is then re-run with three seeds. Choosing
+  by test F1 would overfit the test set.
+

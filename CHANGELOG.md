@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adaptation-method registry `kazner.methods` (Factory Method): `full`, `frozen`, `lora`, built as
   in the pilot; correct trainable-parameter counts plus the pilot's counting as
   `trainable_params_pilot` (#8).
+- Training entry point `kazner train` (`kazner.train`): pilot Trainer arguments, seeds set before
+  the model is built, contract predictions, `metrics.json` with contract- and Trainer-based test
+  metrics plus validation history, idempotent runs (`--force`, `--max-train-samples`), CPU smoke
+  test in CI; configs for the multi-seed PEFT comparison and the LoRA screen (#9).
+
+### Changed
+- Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
+  instead of the data path, so the same experiment gets the same ID from any config (#9).
 
 ## [0.1.0] - 2026-10-07
 

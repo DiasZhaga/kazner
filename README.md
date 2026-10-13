@@ -231,6 +231,33 @@ classifier that PEFT keeps when it trains `modules_to_save`. The pilot counted t
 reported 373,350 (0.210%); this value is kept as `trainable_params_pilot` for comparison with
 the paper.
 
+## Training
+
+```bash
+python scripts/download_kaznerd.py                       # once: KazNERD -> data/kaznerd/
+kazner train --config configs/pilot_full_10pct.yaml      # every seed of the experiment
+kazner train --config configs/peft_10pct_lora.yaml --max-train-samples 200   # quick check
+```
+
+`kazner train` reads, subsamples and tokenizes the data once, then trains every seed with the
+pilot's Trainer arguments. Before each model is built, the seed is set, as in the pilot. Each
+run writes `<output_root>/<run_id>/`:
+
+| File | Content |
+|---|---|
+| `config.json`, `environment.json` | resolved config, data fingerprint, code and library versions, GPU |
+| `predictions.csv` | test predictions in the word-level contract |
+| `metrics.json` | `test_contract` (all words; the thesis metric), `test_trainer` (first-subword positions, truncated words excluded; computed as in the pilot), `validation_best` and `validation_history`, parameter counts, timings |
+| `trainer_state.json` | Hugging Face training log |
+
+Checkpoints are deleted unless `training.keep_checkpoints: true`. `metrics.json` is written
+last and marks a run as complete. Completed run IDs are skipped, so an interrupted series
+resumes where it stopped, and `--force` re-runs them. The run ID hashes a fingerprint of the
+data *content* rather than its path, so the same experiment reached through two configs
+(e.g. `peft_10pct_full.yaml` seed 42 and `pilot_full_10pct.yaml`) is trained only once.
+Model selection (e.g. the LoRA screen in `configs/lora_sweep/`) uses `validation_best`, never
+the test set.
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -285,7 +312,8 @@ src/kazner/
   fertility.py     tokenizer fertility analysis
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
-  cli.py           kazner evaluate | fertility
+  train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
+  cli.py           kazner evaluate | fertility | train
 scripts/           download_kaznerd.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
