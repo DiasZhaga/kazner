@@ -1,0 +1,24 @@
+# Experiment B (WP1, goal G1): the pilot's PEFT comparison at 10% KazNERD, 3 seeds.
+# Settings as in ner-project/src/run_peft_comparison.py; only the training seed varies.
+name: peft_10pct_full
+data:
+  dir: ../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 5.0e-5
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../runs

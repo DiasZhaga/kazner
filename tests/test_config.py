@@ -8,6 +8,7 @@ from kazner.config import (
     CodeState,
     ConfigError,
     code_state,
+    data_fingerprint,
     environment,
     load_config,
     parse_config,
@@ -122,7 +123,6 @@ def test_same_config_gives_the_same_id():
     [
         {"data.train_fraction": 0.25},
         {"data.subsample_seed": 7},
-        {"data.dir": "other"},
         {"model.max_len": 64},
         {"method.name": "lora"},
         {"method.lora.r": 16},
@@ -139,6 +139,21 @@ def test_any_computational_field_changes_the_id(overrides):
 def test_name_and_output_root_do_not_change_the_id():
     base = run_id(cfg().expand()[0], "tree")
     assert run_id(cfg(name="renamed", output_root="elsewhere").expand()[0], "tree") == base
+
+
+def test_data_location_does_not_change_the_id_but_data_content_does(tmp_path):
+    for folder, newline in (("a", b"\n"), ("b", b"\r\n")):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "train.txt").write_bytes(b"x O" + newline + newline + b"y O" + newline)
+    (tmp_path / "c").mkdir()
+    (tmp_path / "c" / "train.txt").write_bytes(b"x B-PER\n")
+    a, b, c = (data_fingerprint(tmp_path / d, ("train.txt",)) for d in "abc")
+    assert a == b  # same content, other directory and CRLF line endings
+    assert a != c
+    run_a = cfg(**{"data.dir": "a"}).expand()[0]
+    run_b = cfg(**{"data.dir": "somewhere/else"}).expand()[0]
+    assert run_id(run_a, "tree", a) == run_id(run_b, "tree", b)
+    assert run_id(run_a, "tree", a) != run_id(run_a, "tree", c)
 
 
 def test_code_reference_changes_the_id():
@@ -209,11 +224,12 @@ def test_run_files_record_config_and_environment(tmp_path):
     run = cfg().expand()[0]
     state = CodeState("abc", "git-tree", "def", False, False)
     env = environment(state)
-    write_run_files(tmp_path / "r", run, "0123456789ab", env)
+    write_run_files(tmp_path / "r", run, "0123456789ab", env, "f" * 64)
 
     config = json.loads((tmp_path / "r" / "config.json").read_text(encoding="utf-8"))
     saved_env = json.loads((tmp_path / "r" / "environment.json").read_text(encoding="utf-8"))
     assert config["run_id"] == "0123456789ab"
+    assert config["data_fingerprint"] == "f" * 64
     assert config["seed"] == 42 and config["data"]["dir"] == "data"
     assert saved_env["code"]["code_ref"] == "abc"
     assert saved_env["packages"]["transformers"] == "5.0.0"

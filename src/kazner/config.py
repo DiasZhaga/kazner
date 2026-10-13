@@ -40,6 +40,7 @@ ALIASES = {
     "seed": "seeds",
 }
 #: Fields that label or place a run but do not change what it computes; not hashed.
+#: The data directory is replaced by a fingerprint of the data content (see data_fingerprint).
 UNHASHED_FIELDS = ("name", "output_root")
 
 
@@ -111,6 +112,7 @@ class RunConfig:
         d = self.to_dict()
         for key in UNHASHED_FIELDS:
             d.pop(key)
+        d["data"].pop("dir")  # a location, not content: the data fingerprint is hashed instead
         return d
 
 
@@ -315,9 +317,25 @@ def canonical_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def run_id(run: RunConfig, code_ref: str) -> str:
-    """First 12 hex chars of sha256(canonical JSON of the hashed config + code reference)."""
-    payload = canonical_json({"config": run.hashable_dict(), "code": code_ref})
+def data_fingerprint(data_dir: str | Path, files: tuple[str, ...] | None = None) -> str:
+    """SHA-256 over the split files' content, with CRLF normalised to LF.
+
+    Identifies the data by content, not by path: the same KazNERD release in another
+    directory, or checked out with Windows line endings, gives the same fingerprint.
+    """
+    from kazner.data import KAZNERD_SPLITS
+
+    data_dir = Path(data_dir)
+    digest = hashlib.sha256()
+    for name in sorted(files or KAZNERD_SPLITS.values()):
+        content = (data_dir / name).read_bytes().replace(b"\r\n", b"\n")
+        digest.update(name.encode("utf-8") + b"\0" + hashlib.sha256(content).digest())
+    return digest.hexdigest()
+
+
+def run_id(run: RunConfig, code_ref: str, data_ref: str = "") -> str:
+    """First 12 hex chars of sha256(hashed config + code reference + data fingerprint)."""
+    payload = canonical_json({"config": run.hashable_dict(), "code": code_ref, "data": data_ref})
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:RUN_ID_LENGTH]
 
 
@@ -355,10 +373,12 @@ def environment(state: CodeState) -> dict[str, Any]:
     return env
 
 
-def write_run_files(run_dir: Path, run: RunConfig, rid: str, env: dict[str, Any]) -> None:
+def write_run_files(
+    run_dir: Path, run: RunConfig, rid: str, env: dict[str, Any], data_ref: str = ""
+) -> None:
     """Write ``config.json`` (resolved run config) and ``environment.json``."""
     run_dir.mkdir(parents=True, exist_ok=True)
-    config = {"run_id": rid, **run.to_dict()}
+    config = {"run_id": rid, "data_fingerprint": data_ref, **run.to_dict()}
     for name, payload in (("config.json", config), ("environment.json", env)):
         text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         (run_dir / name).write_text(text, encoding="utf-8", newline="\n")

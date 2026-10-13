@@ -9,18 +9,18 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | ID | Requirement (Assignment 2) | Priority | Issue | Module | Tests | Status |
 |---|---|---|---|---|---|---|
 | FR1 | Load KazNERD, TWNERTC and an out-of-domain set into one word-level IOB2 format | Must | #3 | `kazner.data` | `tests/test_data.py` | Partial: KazNERD (any IOB2 corpus); TWNERTC converter and out-of-domain set not ported |
-| FR2 | Swap the backbone without duplicating code | Must | #9 | — | — | Planned (v0.2.0) |
-| FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | `kazner.methods` | `tests/test_methods.py` | Partial: full / frozen / LoRA selectable by name; QLoRA and few-shot prompting (WP3) not yet |
+| FR2 | Swap the backbone without duplicating code | Must | #9 | `kazner.config` (`model.name`), `kazner.train` | `tests/test_train.py` (smoke run with another backbone) | Partial: any Hugging Face token-classification encoder by name; generative 3–8B backbones (WP3) not yet |
+| FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | `kazner.methods`, `kazner.train` | `tests/test_methods.py`, `tests/test_train.py` | Partial: full / frozen / LoRA selectable by name and trainable end to end; QLoRA and few-shot prompting (WP3) not yet |
 | FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align`, `kazner.fertility` | `tests/test_align.py`, `tests/test_fertility.py`; `docs/reproduction.md` §2 | Partial: alignment and fertility analysis work with any Hugging Face tokenizer (goal G3 baseline measured: mBERT fertility 2.325); vocabulary extension not in v0.1.0 |
 | FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | `kazner.config`, `configs/` | `tests/test_config.py` | Partial: seeds and all hyper-parameters in YAML, seed lists expand into runs; grid sweeps are separate YAML files; used by training in #9 |
 | FR6 | One identical evaluator for token-classification and generative models | Must | #5 | `kazner.contract`, `kazner.evaluate`, `kazner.cli` | `tests/test_contract.py`, `tests/test_evaluate.py`; `docs/reproduction.md` §1 | Met for the evaluator side: any model that writes the word-level contract is scored identically; the generative adapter (WP3) is out of scope |
 | FR7 | Aggregate across seeds as mean ± sd | Should | #10 | — | — | Planned (v0.2.0) |
 | FR8 | Regenerate every thesis table and figure from stored results | Should | — | — | — | Out of scope |
 | NFR1 | Reproducibility: pinned environment, data version, config snapshot per run | Must | #1, #3, #7, #12 | `pyproject.toml`, `kazner.data`, `.github/workflows/release.yml` | `tests/test_data.py`, `tests/test_release_tools.py` | Partial: pinned dependencies; data pinned to IS2AI/KazNERD `bd4333d` with SHA-256; versioned releases with wheel + sdist; per-run `config.json` + `environment.json` (#7) |
-| NFR2 | Traceability: every number maps to one run ID, configuration and commit | Must | #7, #9 | `kazner.config` | `tests/test_config.py` | Partial: deterministic run ID (config + code tree hash), `config.json` and `environment.json` with the commit; written for every training run from #9 on |
-| NFR3 | Fit 6 GB VRAM through FP16 / 4-bit quantisation | Must | #9 | — | — | Planned (v0.2.0) |
+| NFR2 | Traceability: every number maps to one run ID, configuration and commit | Must | #7, #9 | `kazner.config`, `kazner.train` | `tests/test_config.py`, `tests/test_train.py` | Met: every training run writes `config.json` (with data fingerprint), `environment.json` (commit, tree hash) and `metrics.json` under its run ID |
+| NFR3 | Fit 6 GB VRAM through FP16 / 4-bit quantisation | Must | #9 | `kazner.train` | — | Partial: FP16 on CUDA (`fp16: auto`), small batches with gradient accumulation; 4-bit (QLoRA) in WP3 |
 | NFR4 | Portability: identical code on Windows and Linux | Should | #2 | `.github/workflows/ci.yml` | CI matrix `ubuntu-latest` + `windows-latest` | Met |
-| NFR5 | Fault tolerance: resume a series after interruption | Should | #9 | — | — | Planned (v0.2.0) |
+| NFR5 | Fault tolerance: resume a series after interruption | Should | #9 | `kazner.train` | `tests/test_train.py` | Met for local series: completed run IDs are skipped, incomplete ones restart cleanly; `--force` re-runs |
 | NFR6 | Modifiability: a new model or method = one module + one config | Should | #8 | `kazner.methods` | `tests/test_methods.py` (a custom method is registered in a test) | Met for adaptation methods: one `@register_method` function + one config value |
 | NFR7 | No credentials in the repository; data licences respected | Could | #1, #3 | `.gitignore`, `scripts/download_kaznerd.py` | — | Met: `.env`/data ignored; KazNERD (CC BY 4.0) downloaded, never redistributed |
 
