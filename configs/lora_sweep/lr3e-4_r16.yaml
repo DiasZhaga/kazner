@@ -1,0 +1,26 @@
+# Experiment C (WP1): LoRA learning-rate x rank screen at 10% KazNERD, seed 42.
+# alpha = 2r keeps the LoRA scaling (alpha / r) constant, so only capacity changes.
+# Select the best setting by VALIDATION F1 (metrics.json: validation_best), never by test.
+name: lora_sweep_lr3e-4_r16
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  max_len: 128
+method:
+  name: lora
+  lora: {r: 16, alpha: 32, dropout: 0.1, target_modules: [query, value]}
+training:
+  learning_rate: 3.0e-4
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42]
+output_root: ../../runs
