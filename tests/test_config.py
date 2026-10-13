@@ -1,0 +1,220 @@
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from kazner.config import (
+    CodeState,
+    ConfigError,
+    code_state,
+    environment,
+    load_config,
+    parse_config,
+    run_id,
+    write_run_files,
+)
+
+ROOT = Path(__file__).resolve().parent.parent
+MINIMAL = {"name": "exp", "data": {"dir": "data"}}
+
+
+def cfg(**overrides):
+    raw = json.loads(json.dumps(MINIMAL))
+    for dotted, value in overrides.items():
+        node = raw
+        *parents, last = dotted.split(".")
+        for key in parents:
+            node = node.setdefault(key, {})
+        node[last] = value
+    return parse_config(raw)
+
+
+# --- loading and validation ------------------------------------------------------------
+
+
+def test_defaults_equal_the_pilot_training_arguments():
+    t = cfg().training
+    assert (t.eval_batch_size, t.weight_decay, t.logging_steps) == (8, 0.01, 50)
+    assert t.load_best_model_at_end is True
+    assert t.fp16 == "auto"
+    assert cfg().method.lora.target_modules == ("query", "value")
+
+
+def test_pilot_config_reproduces_the_pilot_settings():
+    c = load_config(ROOT / "configs" / "pilot_full_10pct.yaml")
+    assert c.method.name == "full"
+    assert (c.data.train_fraction, c.data.subsample_seed, c.seeds) == (0.10, 42, (42,))
+    t = c.training
+    assert (t.learning_rate, t.epochs, t.train_batch_size, t.grad_accumulation) == (5e-5, 3.0, 4, 2)
+    assert c.model.max_len == 128
+    assert c.resolve(c.data.dir) == (ROOT / "data" / "kaznerd").resolve()
+
+
+def test_yaml_scientific_notation_without_dot_is_a_number(tmp_path):
+    """PyYAML reads `5e-5` as a string; the loader must still accept it as a float."""
+    path = tmp_path / "c.yaml"
+    path.write_text("name: x\ndata: {dir: d}\ntraining: {learning_rate: 5e-5}\n", encoding="utf-8")
+    assert load_config(path).training.learning_rate == 5e-5
+
+
+def test_fp16_accepts_booleans():
+    assert cfg(**{"training.fp16": True}).training.fp16 == "true"
+    assert cfg(**{"training.fp16": "false"}).training.fp16 == "false"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"training.lr": 1e-4}, r"training\.lr: unknown key \(did you mean 'learning_rate'\?\)"),
+        ({"seed": 1}, r"seed: unknown key \(did you mean 'seeds'\?\)"),
+        ({"data.train_fraction": 1.5}, r"data\.train_fraction: must be in \(0, 1\]"),
+        ({"data.train_fraction": "ten"}, r"data\.train_fraction: expected a number"),
+        ({"model.max_len": 12.5}, r"model\.max_len: expected an integer"),
+        ({"model.max_len": True}, r"model\.max_len: expected an integer"),
+        ({"training.epochs": 0}, r"training\.epochs: must be positive"),
+        ({"training.fp16": "maybe"}, r"training\.fp16: must be auto, true or false"),
+        ({"training.load_best_model_at_end": "yes"}, r"expected true or false"),
+        ({"method.lora.dropout": 1.0}, r"method\.lora\.dropout: must be in \[0, 1\)"),
+        ({"method.lora.target_modules": []}, r"target_modules: expected a non-empty list"),
+        ({"method.name": ""}, r"method\.name: expected a non-empty string"),
+        ({"seeds": [1, 1]}, r"seeds: must not contain duplicates"),
+        ({"data.max_train_samples": 0}, r"data\.max_train_samples: must be positive"),
+        ({"model": "mbert"}, r"model: expected a mapping"),
+    ],
+)
+def test_invalid_values_name_the_offending_key(overrides, message):
+    with pytest.raises(ConfigError, match=message):
+        cfg(**overrides)
+
+
+def test_missing_required_key():
+    with pytest.raises(ConfigError, match="data: required key is missing"):
+        parse_config({"name": "x"})
+
+
+def test_file_errors_mention_the_file(tmp_path):
+    path = tmp_path / "bad.yaml"
+    path.write_text("name: x\ndata: {dir: d}\nmodle: {}\n", encoding="utf-8")
+    with pytest.raises(
+        ConfigError, match=r"bad\.yaml: modle: unknown key \(did you mean 'model'\?\)"
+    ):
+        load_config(path)
+
+
+# --- seeds and run IDs -----------------------------------------------------------------
+
+
+def test_seed_list_expands_into_one_run_per_seed():
+    runs = cfg(seeds=[42, 43, 44]).expand()
+    assert [r.seed for r in runs] == [42, 43, 44]
+    assert len({run_id(r, "tree") for r in runs}) == 3
+
+
+def test_same_config_gives_the_same_id():
+    a, b = cfg().expand()[0], cfg().expand()[0]
+    assert run_id(a, "tree") == run_id(b, "tree")
+    assert len(run_id(a, "tree")) == 12
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"data.train_fraction": 0.25},
+        {"data.subsample_seed": 7},
+        {"data.dir": "other"},
+        {"model.max_len": 64},
+        {"method.name": "lora"},
+        {"method.lora.r": 16},
+        {"training.learning_rate": 1e-4},
+        {"training.keep_checkpoints": True},
+        {"seeds": [43]},
+    ],
+)
+def test_any_computational_field_changes_the_id(overrides):
+    base = run_id(cfg().expand()[0], "tree")
+    assert run_id(cfg(**overrides).expand()[0], "tree") != base
+
+
+def test_name_and_output_root_do_not_change_the_id():
+    base = run_id(cfg().expand()[0], "tree")
+    assert run_id(cfg(name="renamed", output_root="elsewhere").expand()[0], "tree") == base
+
+
+def test_code_reference_changes_the_id():
+    run = cfg().expand()[0]
+    assert run_id(run, "tree-a") != run_id(run, "tree-b")
+
+
+# --- code identity on a temporary git repository ---------------------------------------
+
+
+def git(repo: Path, *args: str) -> str:
+    cmd = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args]
+    return subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=True).stdout
+
+
+@pytest.fixture
+def repo(tmp_path):
+    (tmp_path / "src" / "kazner").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "src" / "kazner" / "core.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "docs" / "notes.md").write_text("notes\n", encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-q", "-m", "init")
+    return tmp_path
+
+
+def commit_change(repo: Path, relpath: str, text: str) -> None:
+    (repo / relpath).write_text(text, encoding="utf-8")
+    git(repo, "commit", "-q", "-am", f"change {relpath}")
+
+
+def test_docs_only_commit_keeps_the_run_id(repo):
+    run = cfg().expand()[0]
+    before = code_state(repo / "src" / "kazner")
+    commit_change(repo, "docs/notes.md", "more notes\n")
+    after = code_state(repo / "src" / "kazner")
+    assert after.commit != before.commit
+    assert run_id(run, after.code_ref) == run_id(run, before.code_ref)
+
+
+def test_code_commit_changes_the_run_id(repo):
+    run = cfg().expand()[0]
+    before = code_state(repo / "src" / "kazner")
+    commit_change(repo, "src/kazner/core.py", "x = 2\n")
+    after = code_state(repo / "src" / "kazner")
+    assert before.source == after.source == "git-tree"
+    assert run_id(run, after.code_ref) != run_id(run, before.code_ref)
+
+
+def test_uncommitted_package_changes_are_flagged(repo):
+    (repo / "src" / "kazner" / "core.py").write_text("x = 3\n", encoding="utf-8")
+    with pytest.warns(UserWarning, match="uncommitted changes"):
+        state = code_state(repo / "src" / "kazner")
+    assert (state.dirty, state.package_dirty) == (True, True)
+
+
+def test_outside_git_the_package_version_is_used(tmp_path):
+    state = code_state(tmp_path)
+    assert state.source == "package-version"
+    assert state.code_ref.startswith("kazner==")
+
+
+# --- run files -------------------------------------------------------------------------
+
+
+def test_run_files_record_config_and_environment(tmp_path):
+    run = cfg().expand()[0]
+    state = CodeState("abc", "git-tree", "def", False, False)
+    env = environment(state)
+    write_run_files(tmp_path / "r", run, "0123456789ab", env)
+
+    config = json.loads((tmp_path / "r" / "config.json").read_text(encoding="utf-8"))
+    saved_env = json.loads((tmp_path / "r" / "environment.json").read_text(encoding="utf-8"))
+    assert config["run_id"] == "0123456789ab"
+    assert config["seed"] == 42 and config["data"]["dir"] == "data"
+    assert saved_env["code"]["code_ref"] == "abc"
+    assert saved_env["packages"]["transformers"] == "5.0.0"
+    assert set(saved_env) >= {"python", "platform", "cuda_available", "gpu"}
