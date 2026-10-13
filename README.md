@@ -258,6 +258,20 @@ data *content* rather than its path, so the same experiment reached through two 
 Model selection (e.g. the LoRA screen in `configs/lora_sweep/`) uses `validation_best`, never
 the test set.
 
+## Aggregation across seeds
+
+```bash
+kazner aggregate --runs runs/ --by method,fraction --out summary.csv
+# method=full  fraction=0.1  n=3  f1=0.9020 ± 0.0021  precision=...  recall=...
+```
+
+Completed runs are grouped by config fields: aliases `method`, `fraction`, `model`, `lr`,
+`epochs`, `r`, `max_len`, or any dotted path such as `method.lora.alpha`. For each group the
+command reports mean, sample standard deviation and n of precision, recall, F1 and accuracy.
+By default the `test_contract` metrics are used; `--metrics test_trainer` selects the
+pilot-compatible block. Incomplete runs are skipped with a warning. A group that mixes runs
+from different code versions (different `src/kazner` trees) is flagged.
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -313,7 +327,8 @@ src/kazner/
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
-  cli.py           kazner evaluate | fertility | train
+  aggregate.py     kazner aggregate: mean ± sd across seeds
+  cli.py           kazner evaluate | fertility | train | aggregate
 scripts/           download_kaznerd.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles

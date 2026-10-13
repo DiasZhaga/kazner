@@ -53,6 +53,17 @@ def _cmd_train(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_aggregate(args: argparse.Namespace) -> int:
+    from kazner.aggregate import aggregate, format_table, load_runs, write_csv
+
+    by = [key.strip() for key in args.by.split(",") if key.strip()]
+    rows = aggregate(load_runs(args.runs), by, block=args.metrics)
+    if args.out is not None:
+        write_csv(args.out, rows)
+    print(format_table(rows, by))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kazner",
@@ -103,6 +114,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="use only the first N sampled training sentences (changes the run ID)",
     )
     train.set_defaults(func=_cmd_train)
+
+    agg = commands.add_parser(
+        "aggregate",
+        help="aggregate runs across seeds (mean, sd, n)",
+        description="Group completed runs by config fields and report mean ± sd per metric.",
+    )
+    agg.add_argument("--runs", type=Path, required=True, help="directory with run folders")
+    agg.add_argument(
+        "--by",
+        default="method,fraction",
+        help="comma-separated keys: aliases (method, fraction, model, lr, epochs, r, max_len) "
+        "or dotted config paths",
+    )
+    agg.add_argument(
+        "--metrics",
+        choices=["test_contract", "test_trainer"],
+        default="test_contract",
+        help="which test-metric block to aggregate",
+    )
+    agg.add_argument("--out", type=Path, help="write the summary CSV here")
+    agg.set_defaults(func=_cmd_aggregate)
     return parser
 
 
