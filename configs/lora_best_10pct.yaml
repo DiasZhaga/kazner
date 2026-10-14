@@ -1,0 +1,25 @@
+# Best LoRA setting from the screen in configs/lora_sweep/ (selected by validation F1),
+# re-run with three seeds for mean ± sd. alpha = 2r as in the screen.
+name: lora_best_10pct
+data:
+  dir: ../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  max_len: 128
+method:
+  name: lora
+  lora: {r: 16, alpha: 32, dropout: 0.1, target_modules: [query, value]}
+training:
+  learning_rate: 1.0e-3
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../runs
