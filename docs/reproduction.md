@@ -177,12 +177,24 @@ Raw rows: `kazner aggregate --runs runs --by method,fraction,lr,r`.
 **Reading.** The pilot's LoRA was **under-trained**: its learning rate was too small. At the
 pilot's rank 8, raising lr from 1e-4 to 1e-3 lifts test F1 from 0.686 to 0.862. The best
 setting by validation (lr 1e-3, r 16) reaches 0.866, so the gap to full fine-tuning shrinks
-from 0.213 to about 0.034. LoRA then trains 0.35% of the parameters, and training is 28%
-faster (559 s vs 772 s).
+from 0.213 to about 0.034. LoRA then trains 0.35% of the parameters.
+
+**Best setting with three seeds** (`configs/lora_best_10pct.yaml`, seeds 42, 43, 44; seed 42 is
+the screen run itself):
+
+| Method | Trainable params | Test F1, mean ± sd (n = 3) |
+|---|---|---|
+| Full fine-tuning | 177,302,067 (100%) | 0.8994 ± 0.0027 |
+| **LoRA lr 1e-3, r 16, α 32** | **629,043 (0.354%)** | **0.8652 ± 0.0028** |
+| LoRA as in the pilot (lr 1e-4, r 8) | 334,131 (0.188%) | 0.6861 ± 0.0035 |
+
+The validation F1 of the three seeds (0.8686 / 0.8634 / 0.8651) agrees with their test F1
+(0.8657 / 0.8677 / 0.8621), so the selection did not overfit the test set.
 
 **Caveats.**
 
-- The C results come from one seed. The best setting still has to be re-run with seeds 43 and 44.
 - The best setting lies at the edge of the grid, and validation F1 is still rising at
   epoch 3 (0.792 → 0.848 → 0.869). A larger lr or more epochs may close the gap further.
+- Wall-clock times are not comparable between runs. On the laptop the same setting took
+  559 s, 819 s and 778 s, depending on the power state, so no speed claim is made.
 
