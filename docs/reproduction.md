@@ -2,8 +2,8 @@
 
 kazner was refactored from the pilot repository (`ner-project`, commit `b6ee209`). This page
 records the checks showing that the refactoring changed the structure but not the behaviour.
-None of them retrains a model: they reuse artefacts saved by the pilot. Training-based
-reproduction (test F1 0.9020 for full fine-tuning on 10% KazNERD) is #11, milestone v0.2.0.
+None of them retrains a model: they reuse artefacts saved by the pilot. Section 3 adds the
+training-based reproduction (#11), and section 4 the first multi-seed results built on it.
 
 Environment of the checks below: Windows 11, Python 3.11.9, kazner `0.1.0.dev0`,
 seqeval 1.2.2, transformers 5.0.0. The pilot's files are read in place (`--pilot ../ner-project`);
@@ -107,3 +107,94 @@ words and UNK rate. All values are **identical** (absolute difference < 10⁻¹�
 The expected overall fertility of 2.325 is reproduced, as is Table III of the pilot paper.
 The unit tests also compare `kazner.fertility` with a verbatim copy of the pilot's
 `RunningStats` / `TokenizerAnalyzer` on the fixtures.
+
+## 3. Training-based reproduction of F1 = 0.9020 (#11)
+
+```bash
+python scripts/download_kaznerd.py
+kazner train --config configs/pilot_full_10pct.yaml
+```
+
+Environment:
+
+- Windows 11, RTX 4050 Laptop GPU (6 GB);
+- torch `2.5.1+cu121`, the same build as the pilot; transformers 5.0.0, peft 0.19.1, datasets 4.5.0;
+- `.venv-gpu`, an environment separate from the CPU test environment;
+- code: commit `94b6868`, `src/kazner` tree `be80673`, clean working tree;
+- run ID `53a89e2dbc4c`, training time 772 s.
+
+Compared metric (as agreed in #11): `metrics.json → test_trainer`, computed as the pilot
+computed its numbers. Tolerance: 0.9020 ± 0.01.
+
+| Test metric | kazner | Pilot (`full_10pct_metrics.json`) | Difference |
+|---|---|---|---|
+| Precision | 0.8928778648 | 0.8928778648 | 0 |
+| Recall | 0.9113858454 | 0.9113858454 | 0 |
+| **F1** | **0.9020369285** | **0.9020369285** | **0** |
+| Accuracy | 0.9790169390 | 0.9790169390 | 0 |
+| Loss | 0.1097337380 | 0.1097337380 | 0 |
+
+**Result: reproduced bit for bit, far inside the ±0.01 tolerance.** The refactored pipeline
+reproduces the pilot's computation exactly: same subset, seeding before the model is built,
+same head initialisation, same Trainer arguments and same evaluation. The contract-based F1
+(all words) is also 0.9020369285. The 5 truncated test words change only accuracy
+(0.9790100444).
+
+## 4. Multi-seed PEFT comparison (experiment B) and LoRA screen (experiment C)
+
+All runs: 10% KazNERD (9,023 sentences, `subsample_seed` 42), mBERT, 3 epochs, batch 4 × gradient
+accumulation 2, max_len 128, FP16, the same code tree `be80673`. Metrics: `test_contract`.
+Raw rows: `kazner aggregate --runs runs --by method,fraction,lr,r`.
+
+### B — the pilot's PEFT comparison with three seeds (42, 43, 44)
+
+| Method (pilot settings) | Test F1, mean ± sd (n = 3) | Pilot paper (1 seed) |
+|---|---|---|
+| Full fine-tuning (lr 5e-5) | **0.8994 ± 0.0027** | 0.902 |
+| LoRA r 8, α 16 (lr 1e-4) | **0.6861 ± 0.0035** | 0.686 |
+| Frozen encoder (lr 5e-5) | **0.0819 ± 0.0039** | 0.092 |
+
+- Full FT and LoRA with seed 42 reproduce the pilot exactly: 0.9020 and 0.6858.
+- The published full-FT value is the best of the three seeds. The multi-seed estimate is
+  0.899 ± 0.003.
+- Frozen with seed 42 gives 0.0781, not the pilot's 0.0919. The pilot trained frozen in the
+  same process right after full fine-tuning and seeded the process only once, so the frozen
+  head was initialised from a random-number state consumed by the preceding run (see
+  `docs/challenges.md`). The published frozen value therefore depended on run order. It lies
+  about 2.6 sd above the multi-seed mean.
+
+### C — LoRA learning rate × rank (seed 42, α = 2r, selection by validation F1)
+
+| lr | r | Trainable params | Validation F1 (best epoch) | Test F1 |
+|---|---|---|---|---|
+| 1e-4 | 8 | 334,131 (0.188%) | 0.6903 (3) | 0.6858 |
+| 1e-4 | 16 | 629,043 (0.354%) | 0.7227 (3) | 0.7173 |
+| 3e-4 | 8 | 334,131 | 0.8048 (3) | 0.8023 |
+| 3e-4 | 16 | 629,043 | 0.8322 (3) | 0.8304 |
+| 1e-3 | 8 | 334,131 | 0.8578 (3) | 0.8617 |
+| **1e-3** | **16** | **629,043** | **0.8686 (3)** | **0.8657** |
+
+**Reading.** The pilot's LoRA was **under-trained**: its learning rate was too small. At the
+pilot's rank 8, raising lr from 1e-4 to 1e-3 lifts test F1 from 0.686 to 0.862. The best
+setting by validation (lr 1e-3, r 16) reaches 0.866, so the gap to full fine-tuning shrinks
+from 0.213 to about 0.034. LoRA then trains 0.35% of the parameters.
+
+**Best setting with three seeds** (`configs/lora_best_10pct.yaml`, seeds 42, 43, 44; seed 42 is
+the screen run itself):
+
+| Method | Trainable params | Test F1, mean ± sd (n = 3) |
+|---|---|---|
+| Full fine-tuning | 177,302,067 (100%) | 0.8994 ± 0.0027 |
+| **LoRA lr 1e-3, r 16, α 32** | **629,043 (0.354%)** | **0.8652 ± 0.0028** |
+| LoRA as in the pilot (lr 1e-4, r 8) | 334,131 (0.188%) | 0.6861 ± 0.0035 |
+
+The validation F1 of the three seeds (0.8686 / 0.8634 / 0.8651) agrees with their test F1
+(0.8657 / 0.8677 / 0.8621), so the selection did not overfit the test set.
+
+**Caveats.**
+
+- The best setting lies at the edge of the grid, and validation F1 is still rising at
+  epoch 3 (0.792 → 0.848 → 0.869). A larger lr or more epochs may close the gap further.
+- Wall-clock times are not comparable between runs. On the laptop the same setting took
+  559 s, 819 s and 778 s, depending on the power state, so no speed claim is made.
+

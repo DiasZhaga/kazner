@@ -233,3 +233,22 @@ aggregator therefore warns when a group mixes different `src/kazner` tree hashes
 (`environment.json → code.code_ref`), which is exactly when the code that produced the
 numbers differs.
 
+## 2026-10-13 — The pilot's frozen-encoder result depended on run order
+
+**Problem.** Experiment B reproduced the pilot bit for bit for full fine-tuning (0.9020) and
+LoRA (0.6858) at seed 42, but not for the frozen encoder (0.0781 vs 0.0919).
+
+**Cause.** The pilot's file timestamps show that `run_peft_comparison.py` trained full
+fine-tuning and the frozen encoder in **one process** on 12 June. Full finished at 01:18:45;
+frozen finished at 01:25:20, 344 s of training later. LoRA was run in a separate process on 4–5
+June. The pilot called `set_all_seeds(42)` once per process. Each model that was the first in
+its process (full, LoRA) therefore started from the seeded state, while the frozen model's new
+classification head was initialised from a random-number state already consumed by the full
+fine-tuning run. kazner seeds immediately before every model, which is why full and LoRA match
+and frozen does not.
+
+**Consequences.** The published frozen value was a function of which experiment happened to run
+before it. A frozen encoder trains only the randomly initialised head, so it is also the
+setting most sensitive to that initialisation. The three-seed estimate, 0.0819 ± 0.0039, is
+reported instead. Per-run seeding removes this hidden dependency on run order.
+

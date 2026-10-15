@@ -36,3 +36,4 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | #6 Tokenizer fertility | FR4 (goal G3) | `tests/test_fertility.py` (incl. oracle vs pilot); `docs/reproduction.md` §2 |
 | #12 Release pipeline | NFR1 | `tests/test_release_tools.py`; release `v0.1.0rc1` and `v0.1.0` |
 | #13 Documentation | — | this file, README, CONTRIBUTING, technology choices |
+| #11 Reproduction check | G1, NFR1, NFR2 | `docs/reproduction.md` §3: run `53a89e2dbc4c` reproduces test F1 0.9020369285 bit for bit; §4: three-seed PEFT comparison |
