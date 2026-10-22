@@ -6,6 +6,7 @@ and special tokens get :data:`IGNORE_INDEX`, so they contribute to neither loss 
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -70,3 +71,39 @@ def truncated_words(word_ids: WordIds, n_words: int) -> list[int]:
     """Indices of the words of a sentence that have no subword in ``word_ids``."""
     seen = first_subword_positions(word_ids)
     return [i for i in range(n_words) if i not in seen]
+
+
+def split_mismatches(tokenizer: Any, sentences: Sequence[Sequence[str]]) -> list[tuple[int, int]]:
+    """``(sentence, word)`` indices of words whose subwords differ between pre-split input and
+    the same sentence as running text.
+
+    Training feeds pre-split words; the model was pre-trained on running text. Byte-level BPE
+    tokenizers (RoBERTa family) encode a pre-split word without its leading-space marker unless
+    they were created with ``add_prefix_space=True``, so every word but the first differs.
+    Running-text tokens are assigned to words by character offsets; a token that ends in the
+    space between two words belongs to the next word.
+    """
+    sentences = [list(words) for words in sentences]
+    pre = tokenizer(sentences, is_split_into_words=True, add_special_tokens=False)
+    running = tokenizer(
+        [" ".join(words) for words in sentences],
+        add_special_tokens=False,
+        return_offsets_mapping=True,
+    )
+    mismatches: list[tuple[int, int]] = []
+    for i, words in enumerate(sentences):
+        by_pre: list[list[int]] = [[] for _ in words]
+        for word_id, token in zip(pre.word_ids(batch_index=i), pre["input_ids"][i], strict=True):
+            by_pre[word_id].append(token)
+        ends, position = [], 0
+        for word in words:
+            position += len(word)
+            ends.append(position)
+            position += 1
+        by_running: list[list[int]] = [[] for _ in words]
+        offsets = running["offset_mapping"][i]
+        for (start, end), token in zip(offsets, running["input_ids"][i], strict=True):
+            word_id = bisect.bisect_right(ends, max(end - 1, start))
+            by_running[min(word_id, len(words) - 1)].append(token)
+        mismatches.extend((i, j) for j in range(len(words)) if by_pre[j] != by_running[j])
+    return mismatches

@@ -63,6 +63,9 @@ class DataConfig:
 class ModelConfig:
     name: str = "bert-base-multilingual-cased"
     max_len: int = 128
+    #: Passed to the tokenizer only when set; ``None`` keeps the tokenizer's default. Byte-level
+    #: BPE tokenizers (RoBERTa family) need ``True`` for pre-split words (see train.py).
+    add_prefix_space: bool | None = None
 
 
 @dataclass(frozen=True)
