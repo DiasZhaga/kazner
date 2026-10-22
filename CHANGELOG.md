@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
   instead of the data path, so the same experiment gets the same ID from any config (#9).
+- Model identity: `model.revision` pins a Hub branch, tag or commit for the tokenizer and the
+  model and is hashed; the resolved commit is recorded in `environment.json`. `model.name` may
+  be a local directory (`./`, `../` or absolute), resolved against the YAML file and hashed by
+  a content fingerprint (`model_fingerprint` in `config.json`) instead of its path (#31).
 
 ### Fixed
 - Byte-level BPE tokenizers (RoBERTa family) silently received pre-split words without their
