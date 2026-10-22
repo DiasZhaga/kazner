@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
   instead of the data path, so the same experiment gets the same ID from any config (#9).
 
+### Fixed
+- Byte-level BPE tokenizers (RoBERTa family) silently received pre-split words without their
+  leading-space marker (KazRoBERTa: 1.569 instead of 1.205 subwords per word on KazNERD
+  validation). New `model.add_prefix_space` config key and `kazner fertility
+  --add-prefix-space`; training now stops before it starts if pre-split words are tokenized
+  differently from running text (#30).
+
 ## [0.1.0] - 2026-10-07
 
 ### Added

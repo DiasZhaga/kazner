@@ -9,7 +9,7 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | ID | Requirement (Assignment 2) | Priority | Issue | Module | Tests | Status |
 |---|---|---|---|---|---|---|
 | FR1 | Load KazNERD, TWNERTC and an out-of-domain set into one word-level IOB2 format | Must | #3 | `kazner.data` | `tests/test_data.py` | Partial: KazNERD (any IOB2 corpus); TWNERTC converter and out-of-domain set not ported |
-| FR2 | Swap the backbone without duplicating code | Must | #9 | `kazner.config` (`model.name`), `kazner.train` | `tests/test_train.py` (smoke run with another backbone) | Partial: any Hugging Face token-classification encoder by name; generative 3–8B backbones (WP3) not yet |
+| FR2 | Swap the backbone without duplicating code | Must | #9, #30 | `kazner.config` (`model.name`, `model.add_prefix_space`), `kazner.train`, `kazner.align` | `tests/test_train.py` (smoke run with another backbone), `tests/test_align.py`, `tests/test_network.py` | Partial: any Hugging Face token-classification encoder by name, including byte-level BPE tokenizers (checked at start: pre-split words tokenized as in running text); generative 3–8B backbones (WP3) not yet |
 | FR3 | Swap the adaptation method (full, frozen, LoRA, …) | Must | #8, #9 | `kazner.methods`, `kazner.train` | `tests/test_methods.py`, `tests/test_train.py` | Partial: full / frozen / LoRA selectable by name and trainable end to end; QLoRA and few-shot prompting (WP3) not yet |
 | FR4 | Replace or extend the tokenizer | Must | #4, #6 | `kazner.align`, `kazner.fertility` | `tests/test_align.py`, `tests/test_fertility.py`; `docs/reproduction.md` §2 | Partial: alignment and fertility analysis work with any Hugging Face tokenizer (goal G3 baseline measured: mBERT fertility 2.325); vocabulary extension not in v0.1.0 |
 | FR5 | Seeds and sweeps declared in configuration, not code | Must | #7 | `kazner.config`, `configs/` | `tests/test_config.py` | Partial: seeds and all hyper-parameters in YAML, seed lists expand into runs; grid sweeps are separate YAML files; used by training in #9 |
@@ -37,3 +37,4 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | #12 Release pipeline | NFR1 | `tests/test_release_tools.py`; release `v0.1.0rc1` and `v0.1.0` |
 | #13 Documentation | — | this file, README, CONTRIBUTING, technology choices |
 | #11 Reproduction check | G1, NFR1, NFR2 | `docs/reproduction.md` §3: run `53a89e2dbc4c` reproduces test F1 0.9020369285 bit for bit; §4: three-seed PEFT comparison |
+| #30 Byte-level BPE prefix space | FR2, FR4 | `tests/test_align.py`, `tests/test_train.py`, `tests/test_fertility.py` (offline byte-level BPE fixture); `tests/test_network.py` (mBERT, XLM-R, KazRoBERTa) |
