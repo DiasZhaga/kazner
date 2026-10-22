@@ -59,6 +59,12 @@ def test_yaml_scientific_notation_without_dot_is_a_number(tmp_path):
     assert load_config(path).training.learning_rate == 5e-5
 
 
+def test_add_prefix_space_defaults_to_the_tokenizer_default():
+    assert cfg().model.add_prefix_space is None
+    assert cfg(**{"model.add_prefix_space": None}).model.add_prefix_space is None
+    assert cfg(**{"model.add_prefix_space": True}).model.add_prefix_space is True
+
+
 def test_fp16_accepts_booleans():
     assert cfg(**{"training.fp16": True}).training.fp16 == "true"
     assert cfg(**{"training.fp16": "false"}).training.fp16 == "false"
@@ -73,6 +79,7 @@ def test_fp16_accepts_booleans():
         ({"data.train_fraction": "ten"}, r"data\.train_fraction: expected a number"),
         ({"model.max_len": 12.5}, r"model\.max_len: expected an integer"),
         ({"model.max_len": True}, r"model\.max_len: expected an integer"),
+        ({"model.add_prefix_space": "yes"}, r"model\.add_prefix_space: expected true or false"),
         ({"training.epochs": 0}, r"training\.epochs: must be positive"),
         ({"training.fp16": "maybe"}, r"training\.fp16: must be auto, true or false"),
         ({"training.load_best_model_at_end": "yes"}, r"expected true or false"),
@@ -124,6 +131,7 @@ def test_same_config_gives_the_same_id():
         {"data.train_fraction": 0.25},
         {"data.subsample_seed": 7},
         {"model.max_len": 64},
+        {"model.add_prefix_space": True},
         {"method.name": "lora"},
         {"method.lora.r": 16},
         {"training.learning_rate": 1e-4},

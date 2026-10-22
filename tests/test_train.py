@@ -5,11 +5,21 @@ import numpy as np
 import pytest
 
 from kazner.align import IGNORE_INDEX
-from kazner.config import parse_config
+from kazner.config import ConfigError, parse_config
 from kazner.contract import read_predictions
-from kazner.train import build_compute_metrics, resolve_fp16, word_predictions
+from kazner.data import read_splits
+from kazner.train import (
+    build_compute_metrics,
+    check_word_tokenization,
+    prepare_corpus,
+    resolve_fp16,
+    word_predictions,
+)
 
 TINY = Path(__file__).parent / "data" / "kaznerd_tiny"
+#: transformers builds a RoBERTa tokenizer's BPE from vocab.json/merges.txt paths (as for
+#: KazRoBERTa), which `tokenizers` deprecates; not ours to fix.
+BPE_FROM_FILES = "ignore:Deprecated in 0.9.0:DeprecationWarning"
 ID2LABEL = {0: "B-PER", 1: "I-PER", 2: "O"}
 X = IGNORE_INDEX
 
@@ -60,6 +70,36 @@ def test_fp16_resolution_on_cpu(monkeypatch):
     assert resolve_fp16("false") is False
     with pytest.raises(ValueError, match="CUDA is not available"):
         resolve_fp16("true")
+
+
+@pytest.mark.filterwarnings(BPE_FROM_FILES)
+def test_word_tokenization_check_names_the_config_key(bytelevel_dir):
+    from transformers import AutoTokenizer
+
+    sentences = read_splits(TINY)["train"][0]
+    fixed = AutoTokenizer.from_pretrained(bytelevel_dir, add_prefix_space=True)
+    check_word_tokenization(fixed, sentences, True)  # no error
+    with pytest.raises(
+        ConfigError,
+        match=r"model\.add_prefix_space: 16 of 20 training words .* add_prefix_space is None",
+    ):
+        check_word_tokenization(AutoTokenizer.from_pretrained(bytelevel_dir), sentences, None)
+
+
+@pytest.mark.filterwarnings(BPE_FROM_FILES)
+def test_prepare_corpus_passes_add_prefix_space_to_the_tokenizer(bytelevel_dir):
+    raw = {
+        "name": "bytelevel",
+        "data": {"dir": str(TINY)},
+        "model": {"name": str(bytelevel_dir), "max_len": 32},
+    }
+    with pytest.raises(ConfigError, match=r"need 'add_prefix_space: true'"):
+        prepare_corpus(parse_config(raw))
+
+    raw["model"]["add_prefix_space"] = True
+    corpus = prepare_corpus(parse_config(raw))
+    assert corpus["tokenizer"].add_prefix_space is True
+    assert len(corpus["train"]) == 4
 
 
 @pytest.mark.smoke

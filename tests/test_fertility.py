@@ -9,6 +9,9 @@ from kazner.fertility import FertilityStats, WordTokenizer, analyse_corpus, word
 from reference import pilot_fertility
 
 TINY = Path(__file__).parent / "data" / "kaznerd_tiny"
+#: transformers builds a RoBERTa tokenizer's BPE from vocab.json/merges.txt paths (as for
+#: KazRoBERTa), which `tokenizers` deprecates; not ours to fix.
+BPE_FROM_FILES = "ignore:Deprecated in 0.9.0:DeprecationWarning"
 
 
 def test_hand_computed_statistics(tiny_tokenizer):
@@ -107,6 +110,20 @@ def test_cli_fertility(tiny_tokenizer, tmp_path, monkeypatch, capsys):
     saved = json.loads(out.read_text(encoding="utf-8"))
     assert saved == json.loads(capsys.readouterr().out)
     assert saved["tokenizer"] == "tiny"
+    assert saved["add_prefix_space"] is False
+
+
+@pytest.mark.filterwarnings(BPE_FROM_FILES)
+def test_cli_fertility_with_add_prefix_space(bytelevel_dir, capsys):
+    """Byte-level BPE: words tokenized with their leading-space marker, as in training."""
+    reports = {}
+    for flag in ([], ["--add-prefix-space"]):
+        assert (
+            main(["fertility", "--data", str(TINY), "--tokenizer", str(bytelevel_dir), *flag]) == 0
+        )
+        report = json.loads(capsys.readouterr().out)
+        reports[report["add_prefix_space"]] = report["splits"]["train"]["fertility"]
+    assert reports[True] < reports[False]
 
 
 @pytest.mark.network
