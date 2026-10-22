@@ -20,7 +20,7 @@ import typing
 import warnings
 from dataclasses import dataclass, field
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import yaml
@@ -42,10 +42,21 @@ ALIASES = {
 #: Fields that label or place a run but do not change what it computes; not hashed.
 #: The data directory is replaced by a fingerprint of the data content (see data_fingerprint).
 UNHASHED_FIELDS = ("name", "output_root")
+#: A ``model.name`` with one of these prefixes, or with a drive letter, is a local directory;
+#: anything else is a Hugging Face Hub ID (so ``org/name`` is never read as a path).
+LOCAL_MODEL_PREFIXES = ("./", "../", ".\\", "..\\", "/", "\\")
+#: Files of a model directory whose line endings are normalised in its fingerprint:
+#: ``save_pretrained`` writes them with CRLF on Windows.
+TEXT_SUFFIXES = (".json", ".txt")
 
 
 class ConfigError(ValueError):
     """A configuration file or value is invalid; the message names the offending key."""
+
+
+def is_local_model(name: str) -> bool:
+    """``True`` if ``model.name`` is a path (see :data:`LOCAL_MODEL_PREFIXES`)."""
+    return name.startswith(LOCAL_MODEL_PREFIXES) or PureWindowsPath(name).is_absolute()
 
 
 # --------------------------------------------------------------------------- dataclasses
@@ -66,6 +77,9 @@ class ModelConfig:
     #: Passed to the tokenizer only when set; ``None`` keeps the tokenizer's default. Byte-level
     #: BPE tokenizers (RoBERTa family) need ``True`` for pre-split words (see train.py).
     add_prefix_space: bool | None = None
+    #: Hub branch, tag or commit for the tokenizer and the model; ``None`` = default branch.
+    #: Pin a commit for reported results. Not allowed for a local directory.
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +130,8 @@ class RunConfig:
         for key in UNHASHED_FIELDS:
             d.pop(key)
         d["data"].pop("dir")  # a location, not content: the data fingerprint is hashed instead
+        if is_local_model(self.model.name):
+            d["model"].pop("name")  # likewise: the model fingerprint is hashed instead
         return d
 
 
@@ -150,6 +166,11 @@ class ExperimentConfig:
         """Resolve a path from the config against the YAML file's directory."""
         p = Path(path)
         return p if p.is_absolute() else (self.base_dir / p).resolve()
+
+    def model_location(self) -> str:
+        """What ``from_pretrained`` gets: a Hub ID as written, a local directory resolved."""
+        name = self.model.name
+        return str(self.resolve(name)) if is_local_model(name) else name
 
 
 def _to_plain(obj: Any) -> Any:
@@ -241,6 +262,11 @@ def _validate(cfg: ExperimentConfig) -> None:
     mts = cfg.data.max_train_samples
     check(mts is None or mts > 0, "data.max_train_samples", "must be positive")
     check(cfg.model.max_len > 0, "model.max_len", "must be positive")
+    check(
+        cfg.model.revision is None or not is_local_model(cfg.model.name),
+        "model.revision",
+        "only applies to Hugging Face Hub models, not to a local directory",
+    )
     check(cfg.method.lora.r > 0, "method.lora.r", "must be positive")
     check(cfg.method.lora.alpha > 0, "method.lora.alpha", "must be positive")
     check(0 <= cfg.method.lora.dropout < 1, "method.lora.dropout", "must be in [0, 1)")
@@ -336,9 +362,41 @@ def data_fingerprint(data_dir: str | Path, files: tuple[str, ...] | None = None)
     return digest.hexdigest()
 
 
-def run_id(run: RunConfig, code_ref: str, data_ref: str = "") -> str:
-    """First 12 hex chars of sha256(hashed config + code reference + data fingerprint)."""
-    payload = canonical_json({"config": run.hashable_dict(), "code": code_ref, "data": data_ref})
+def model_fingerprint(model_dir: str | Path) -> str:
+    """SHA-256 over every file of a local model directory (relative path + content).
+
+    Identifies a locally produced checkpoint by content, not by path. Line endings of text
+    files (:data:`TEXT_SUFFIXES`) are normalised, so a model saved on Windows and on Linux
+    gets the same fingerprint. Files and directories whose name starts with a dot are skipped.
+    """
+    model_dir = Path(model_dir)
+    if not model_dir.is_dir():
+        raise ConfigError(f"model.name: local model directory {model_dir} does not exist")
+    digest = hashlib.sha256()
+    files = sorted(
+        p
+        for p in model_dir.rglob("*")
+        if p.is_file() and not any(part.startswith(".") for part in p.relative_to(model_dir).parts)
+    )
+    for path in files:
+        content = hashlib.sha256()
+        if path.suffix in TEXT_SUFFIXES:
+            content.update(path.read_bytes().replace(b"\r\n", b"\n"))
+        else:
+            with path.open("rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    content.update(chunk)
+        name = path.relative_to(model_dir).as_posix()
+        digest.update(name.encode("utf-8") + b"\0" + content.digest())
+    return digest.hexdigest()
+
+
+def run_id(run: RunConfig, code_ref: str, data_ref: str = "", model_ref: str = "") -> str:
+    """First 12 hex chars of sha256(hashed config + code reference + data and model
+    fingerprints); ``model_ref`` is empty for Hub models, which are hashed by name."""
+    payload = canonical_json(
+        {"config": run.hashable_dict(), "code": code_ref, "data": data_ref, "model": model_ref}
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:RUN_ID_LENGTH]
 
 
@@ -377,11 +435,21 @@ def environment(state: CodeState) -> dict[str, Any]:
 
 
 def write_run_files(
-    run_dir: Path, run: RunConfig, rid: str, env: dict[str, Any], data_ref: str = ""
+    run_dir: Path,
+    run: RunConfig,
+    rid: str,
+    env: dict[str, Any],
+    data_ref: str = "",
+    model_ref: str = "",
 ) -> None:
     """Write ``config.json`` (resolved run config) and ``environment.json``."""
     run_dir.mkdir(parents=True, exist_ok=True)
-    config = {"run_id": rid, "data_fingerprint": data_ref, **run.to_dict()}
+    config = {
+        "run_id": rid,
+        "data_fingerprint": data_ref,
+        "model_fingerprint": model_ref or None,
+        **run.to_dict(),
+    }
     for name, payload in (("config.json", config), ("environment.json", env)):
         text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         (run_dir / name).write_text(text, encoding="utf-8", newline="\n")
