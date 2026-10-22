@@ -74,16 +74,20 @@ def build_model(
     model_name: str,
     label2id: Mapping[str, int],
     id2label: Mapping[int, str],
+    revision: str | None = None,
 ) -> BuiltModel:
-    """Create a token-classification model for ``model_name`` and adapt it with ``method``."""
+    """Create a token-classification model for ``model_name`` (a Hub ID at ``revision``, or a
+    local directory) and adapt it with ``method``."""
     if method.name not in _REGISTRY:
         raise ValueError(
             f"unknown adaptation method {method.name!r}; registered: {registered_methods()}"
         )
     from transformers import AutoModelForTokenClassification
 
+    kwargs = {} if revision is None else {"revision": revision}
     model = AutoModelForTokenClassification.from_pretrained(
         model_name,
+        **kwargs,
         num_labels=len(label2id),
         id2label=dict(id2label),
         label2id=dict(label2id),
