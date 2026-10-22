@@ -21,8 +21,14 @@ from typing import Any
 
 import numpy as np
 
-from kazner.align import IGNORE_INDEX, first_subword_positions, tokenize_and_align
+from kazner.align import (
+    IGNORE_INDEX,
+    first_subword_positions,
+    split_mismatches,
+    tokenize_and_align,
+)
 from kazner.config import (
+    ConfigError,
     ExperimentConfig,
     RunConfig,
     code_state,
@@ -110,6 +116,26 @@ def resolve_fp16(setting: str) -> bool:
     if setting == "true" and not cuda:
         raise ValueError("training.fp16 is true but CUDA is not available")
     return setting == "true"
+
+
+def check_word_tokenization(
+    tokenizer: Any, sentences: Sequence[Sequence[str]], add_prefix_space: bool | None
+) -> None:
+    """Fail unless pre-split words get the same subwords as in running text.
+
+    Otherwise the model is fine-tuned on tokens it did not see in pre-training. transformers
+    5 accepts this silently for byte-level BPE tokenizers without ``add_prefix_space``.
+    """
+    mismatches = split_mismatches(tokenizer, sentences)
+    if mismatches:
+        i, j = mismatches[0]
+        n_words = sum(len(words) for words in sentences)
+        raise ConfigError(
+            f"model.add_prefix_space: {len(mismatches)} of {n_words} training words are split "
+            f"differently as pre-split words than in running text (first: {sentences[i][j]!r}; "
+            f"add_prefix_space is {add_prefix_space}). Byte-level BPE tokenizers (RoBERTa "
+            "family) need 'add_prefix_space: true'."
+        )
 
 
 def _dataset(tokens, labels):
@@ -274,7 +300,10 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
         sub_tokens = sub_tokens[: cfg.data.max_train_samples]
         sub_labels = sub_labels[: cfg.data.max_train_samples]
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model.name)
+    prefix = cfg.model.add_prefix_space
+    kwargs = {} if prefix is None else {"add_prefix_space": prefix}
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model.name, **kwargs)
+    check_word_tokenization(tokenizer, sub_tokens, prefix)
     max_len = cfg.model.max_len
     test_tokens, test_labels = splits["test"]
     return {

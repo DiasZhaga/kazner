@@ -186,7 +186,9 @@ words first). For each split and overall it reports:
 - the UNK rate.
 
 Each word is tokenized on its own, and an empty tokenization counts as one unknown token, as
-in the pilot.
+in the pilot. For byte-level BPE tokenizers (RoBERTa family) add `--add-prefix-space`, so
+that each word keeps the leading-space marker it has in running text and in training (see
+`model.add_prefix_space` below).
 
 ## Configuration and run IDs
 
@@ -205,6 +207,15 @@ training: {learning_rate: 5.0e-5, epochs: 3, train_batch_size: 4, grad_accumulat
 seeds: [42]                     # a list expands into one run per seed
 output_root: ../runs
 ```
+
+Training feeds pre-split words to the tokenizer, but a model was pre-trained on running text.
+Byte-level BPE tokenizers (RoBERTa family, e.g. KazRoBERTa) then encode every word but the
+first without its leading-space marker, unless the config sets
+`model: {add_prefix_space: true}`. The default `null` keeps the tokenizer's own default.
+Before training, kazner checks that every training word gets the same subwords as pre-split
+input and as running text. If it does not, training stops with an error that names
+`model.add_prefix_space`. WordPiece (mBERT) and SentencePiece (XLM-R) tokenizers pass
+without the flag.
 
 Each run gets a deterministic **run ID**: the first 12 hex characters of
 sha256(resolved single-seed config + code reference). The code reference is the git tree

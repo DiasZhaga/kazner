@@ -6,6 +6,7 @@ from kazner.align import (
     IGNORE_INDEX,
     align_labels,
     first_subword_positions,
+    split_mismatches,
     tokenize_and_align,
     truncated_words,
 )
@@ -14,6 +15,9 @@ from reference import pilot_align
 
 TINY = Path(__file__).parent / "data" / "kaznerd_tiny"
 X = IGNORE_INDEX
+#: transformers builds a RoBERTa tokenizer's BPE from vocab.json/merges.txt paths (as for
+#: KazRoBERTa), which `tokenizers` deprecates; not ours to fix.
+BPE_FROM_FILES = "ignore:Deprecated in 0.9.0:DeprecationWarning"
 
 
 @pytest.fixture(scope="module")
@@ -95,6 +99,36 @@ def test_align_labels_on_hand_written_word_ids():
 def test_first_subword_positions_without_truncation():
     assert first_subword_positions([None, 0, 0, 1, 2, 2, None]) == {0: 1, 1: 3, 2: 4}
     assert truncated_words([None, 0, 0, 1, 2, 2, None], 3) == []
+
+
+# --- pre-split words vs running text -------------------------------------------------------
+
+
+def test_wordpiece_splits_pre_split_words_like_running_text(tiny_tokenizer, corpus):
+    assert split_mismatches(tiny_tokenizer, corpus[0]["train"][0]) == []
+
+
+@pytest.mark.filterwarnings(BPE_FROM_FILES)
+def test_bytelevel_bpe_without_prefix_space_differs_after_the_first_word(bytelevel_dir, corpus):
+    from transformers import AutoTokenizer
+
+    sentences = corpus[0]["train"][0]
+    mismatches = split_mismatches(AutoTokenizer.from_pretrained(bytelevel_dir), sentences)
+    assert mismatches == [(i, j) for i, words in enumerate(sentences) for j in range(1, len(words))]
+
+
+@pytest.mark.filterwarnings(BPE_FROM_FILES)
+def test_add_prefix_space_gives_every_word_its_space_marker(bytelevel_dir, corpus):
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(bytelevel_dir, add_prefix_space=True)
+    sentences = corpus[0]["train"][0]
+    assert split_mismatches(tokenizer, sentences) == []
+    encoding = tokenizer(sentences[0], is_split_into_words=True)
+    tokens = tokenizer.convert_ids_to_tokens(encoding["input_ids"])
+    first = first_subword_positions(encoding.word_ids())
+    assert len(first) == len(sentences[0])
+    assert all(tokens[position].startswith("Ġ") for position in first.values())
 
 
 @pytest.mark.network

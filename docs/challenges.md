@@ -252,3 +252,35 @@ before it. A frozen encoder trains only the randomly initialised head, so it is 
 setting most sensitive to that initialisation. The three-seed estimate, 0.0819 ± 0.0039, is
 reported instead. Per-run seeding removes this hidden dependency on run order.
 
+
+## 2026-10-22 — Byte-level BPE tokenizers got pre-split words without their space marker
+
+**Problem.** While planning the KazRoBERTa baseline, I checked how its tokenizer handles
+kazner's word-level input (`is_split_into_words=True`). Byte-level BPE (RoBERTa family) marks
+a word that follows a space with `Ġ`. Without `add_prefix_space=True`, each pre-split word is
+encoded as if it started the text, so the marker is lost. In transformers 4.x the fast RoBERTa
+tokenizer refused this combination. transformers 5.0.0 accepts it without an error or a
+warning. On KazNERD validation, KazRoBERTa produced 1.569 subwords per word instead of 1.205.
+Across all of KazNERD, 1,189,650 of 1,302,352 words got different token ids: every word
+except the first of its sentence. The model would have been fine-tuned on ids that it saw in
+pre-training only inside words or at the start of a text. Training would still have run and
+reported a plausible, lower F1, and the loss would have been blamed on the model. The same
+effect explains the gap between isolated and in-context fertility for KazRoBERTa in the
+tokenizer comparison of 2026-10-13 (1.571 vs 1.211).
+
+**Resolution.** The new `model.add_prefix_space` key is passed to the tokenizer only when it
+is set. It is explicit rather than automatic, so that the value appears in `config.json` and
+in the run ID. Before training, `prepare_corpus` checks that every training word gets the same
+ids as pre-split input and as running text. Running-text tokens are mapped to words by
+character offsets. If any word differs, training stops with an error that names the key. The
+check has no tolerance: mBERT and XLM-R produce 0 mismatches on all 1.3 M KazNERD words, and
+so does KazRoBERTa with the flag. Any mismatch therefore means a real problem.
+`kazner fertility --add-prefix-space` reports the fertility that training actually sees.
+
+**Consequences.** mBERT is unaffected: its tokenizer is created exactly as before when the key
+is `null`, and setting the flag does not change its ids either (network test). Run IDs change,
+as with every change to `src/kazner`. The offline tests use a byte-level BPE tokenizer trained
+on the synthetic fixture and saved in KazRoBERTa's layout (`config.json`, `vocab.json`,
+`merges.txt`). transformers builds such a tokenizer through a code path that `tokenizers`
+deprecates, so those tests filter that one warning. Suites run with
+`-W error::DeprecationWarning` stay green.

@@ -28,10 +28,12 @@ def _cmd_fertility(args: argparse.Namespace) -> int:
 
     from kazner.fertility import analyse_corpus, write_report
 
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+    kwargs = {"add_prefix_space": True} if args.add_prefix_space else {}
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, **kwargs)
     report = analyse_corpus(
         args.data, tokenizer, tokenizer_name=args.tokenizer, lowercase=args.lowercase
     )
+    report["add_prefix_space"] = args.add_prefix_space
     if args.out is not None:
         write_report(args.out, report)
     print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -98,6 +100,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--tokenizer", default="bert-base-multilingual-cased", help="Hugging Face name or path"
     )
     fertility.add_argument("--lowercase", action="store_true", help="lowercase words first")
+    fertility.add_argument(
+        "--add-prefix-space",
+        action="store_true",
+        help="create the tokenizer with add_prefix_space=True (byte-level BPE, e.g. RoBERTa)",
+    )
     fertility.add_argument("--out", type=Path, help="write the JSON report here")
     fertility.set_defaults(func=_cmd_fertility)
 
