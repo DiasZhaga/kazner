@@ -309,3 +309,26 @@ For those, a path says nothing about the content, and a relative path passed str
   commit; that is a rule for the experiment configs (#32), not something the code enforces.
 - `model.revision` together with a local directory is a configuration error rather than
   being ignored.
+
+## 2026-10-23 — Baseline protocol: tune every model the same way
+
+**Problem.** XLM-R and KazRoBERTa need their own learning rate. mBERT's 5e-5 was inherited
+from the pilot and was never tuned. Tuning only the new models would compare tuned baselines
+with an untuned reference and bias the comparison towards them.
+
+**Decisions.**
+- All three models get a four-point learning-rate screen at seed 42, with selection by
+  validation F1 and the grid extended at an edge (the LoRA screen's best value was at the
+  edge). Everything else stays at the pilot protocol, including no warm-up. XLM-R is known to
+  be sensitive to warm-up. A collapsed run would be reported, and warm-up would then be a
+  separate change applied to all three models.
+- mBERT at 5e-5 is screened again with a pinned commit and the current code. It is a new run
+  ID but the same computation, so it doubles as a regression check of #30 and #31 against the
+  bit-exact pilot reproduction (F1 0.9020369285).
+- Exact parameter counts were taken from the loaded models, not from the model cards:
+  KazRoBERTa's card gives 83.5 M for the masked-LM model, while the token-classification model
+  has 82.9 M.
+
+**Practical problem.** Downloading the two checkpoints (1.45 GB) took about 4.5 hours on the
+available connection (≈ 90 KB/s). Corpus downloads for #34 have to be sized and scheduled
+with that in mind: streaming a fixed subsample, not downloading whole parquet shards.

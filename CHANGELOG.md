@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model and is hashed; the resolved commit is recorded in `environment.json`. `model.name` may
   be a local directory (`./`, `../` or absolute), resolved against the YAML file and hashed by
   a content fingerprint (`model_fingerprint` in `config.json`) instead of its path (#31).
+- Baselines next to mBERT: learning-rate screen configs for mBERT, XLM-R base and KazRoBERTa
+  with pinned model commits (`configs/baselines/`), protocol in `docs/baselines.md`; a test
+  that every shipped config loads and validates (#32).
 
 ### Fixed
 - Byte-level BPE tokenizers (RoBERTa family) silently received pre-split words without their
