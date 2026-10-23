@@ -95,6 +95,22 @@ def test_registry_rejects_duplicates_and_accepts_new_methods(tiny_bert):
         methods._REGISTRY.pop("head_and_last_layer")
 
 
+def test_revision_is_passed_only_when_set(tiny_bert, monkeypatch):
+    from transformers import AutoModelForTokenClassification
+
+    original = AutoModelForTokenClassification.from_pretrained
+    seen = []
+
+    def spy(name, **kwargs):
+        seen.append(kwargs.pop("revision", "<absent>"))
+        return original(name, **kwargs)
+
+    monkeypatch.setattr(AutoModelForTokenClassification, "from_pretrained", spy)
+    build_model(MethodConfig("full"), tiny_bert, LABEL2ID, ID2LABEL, revision="abc123")
+    build_model(MethodConfig("full"), tiny_bert, LABEL2ID, ID2LABEL)
+    assert seen == ["abc123", "<absent>"]
+
+
 @pytest.mark.network
 def test_methods_on_tiny_random_bert():
     for name in ("full", "frozen", "lora"):

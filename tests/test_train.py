@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -11,12 +12,14 @@ from kazner.data import read_splits
 from kazner.train import (
     build_compute_metrics,
     check_word_tokenization,
+    model_identity,
     prepare_corpus,
     resolve_fp16,
     word_predictions,
 )
 
 TINY = Path(__file__).parent / "data" / "kaznerd_tiny"
+TINY_MODEL = "hf-internal-testing/tiny-random-bert"
 #: transformers builds a RoBERTa tokenizer's BPE from vocab.json/merges.txt paths (as for
 #: KazRoBERTa), which `tokenizers` deprecates; not ours to fix.
 BPE_FROM_FILES = "ignore:Deprecated in 0.9.0:DeprecationWarning"
@@ -102,6 +105,38 @@ def test_prepare_corpus_passes_add_prefix_space_to_the_tokenizer(bytelevel_dir):
     assert len(corpus["train"]) == 4
 
 
+def test_prepare_corpus_loads_the_tokenizer_from_the_resolved_model(
+    tiny_tokenizer, monkeypatch, tmp_path
+):
+    import transformers
+
+    calls = []
+
+    def fake(name, **kwargs):
+        calls.append((name, kwargs))
+        return tiny_tokenizer
+
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", fake)
+    data = {"dir": str(TINY)}
+    hub = {"name": "x", "data": data, "model": {"name": "org/model", "revision": "abc123"}}
+    local = {"name": "x", "data": data, "model": {"name": "./models/m"}}
+    resolved = str((tmp_path / "models" / "m").resolve())
+
+    assert prepare_corpus(parse_config(hub))["model_location"] == "org/model"
+    assert prepare_corpus(parse_config(local, base_dir=tmp_path))["model_location"] == resolved
+    assert calls == [("org/model", {"revision": "abc123"}), (resolved, {})]
+
+
+def test_model_identity_of_a_local_directory(tmp_path):
+    raw = {"name": "x", "data": {"dir": "d"}, "model": {"name": "./m"}}
+    identity = model_identity(parse_config(raw, base_dir=tmp_path), "f" * 64)
+    assert identity == {
+        "name": "./m",
+        "path": str((tmp_path / "m").resolve()),
+        "fingerprint": "f" * 64,
+    }
+
+
 @pytest.mark.smoke
 def test_end_to_end_training_on_a_tiny_model(tmp_path, capsys):
     from kazner.cli import main
@@ -137,6 +172,9 @@ def test_end_to_end_training_on_a_tiny_model(tmp_path, capsys):
     assert set(metrics["test_trainer"]) >= {"precision", "recall", "f1", "accuracy", "loss"}
     assert metrics["validation_best"]["eval_f1"] >= 0
     assert metrics["trainable_params"] < metrics["trainable_params_pilot"]  # LoRA
+    env = json.loads((run_dir / "environment.json").read_text(encoding="utf-8"))
+    assert env["model"]["name"] == TINY_MODEL and env["model"]["revision"] is None
+    assert len(env["model"]["commit"]) == 40  # the Hub commit the runs resolved to
     contract = read_predictions(run_dir / "predictions.csv")
     assert contract.n_words == 11  # every gold word of the tiny test split
     assert metrics["test_contract"]["n_truncated_words"] > 0  # max_len 8 cuts sentences
@@ -152,3 +190,47 @@ def test_end_to_end_training_on_a_tiny_model(tmp_path, capsys):
     yaml_path.write_text(json.dumps(raw), encoding="utf-8")  # JSON is valid YAML
     assert main(["train", "--config", str(yaml_path)]) == 0
     assert "0 run(s) trained, 2 skipped" in capsys.readouterr().out
+
+
+@pytest.mark.smoke
+def test_training_from_a_local_model_directory(tmp_path):
+    from transformers import AutoModel, AutoTokenizer
+
+    from kazner.config import load_config, model_fingerprint
+    from kazner.train import run_experiment
+
+    model_dir = tmp_path / "models" / "tiny"
+    AutoTokenizer.from_pretrained(TINY_MODEL).save_pretrained(model_dir)
+    AutoModel.from_pretrained(TINY_MODEL).save_pretrained(model_dir)
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    raw = {
+        "name": "local",
+        "data": {"dir": str(TINY)},
+        "model": {"name": "../models/tiny", "max_len": 16},
+        "method": {"name": "full"},
+        "training": {"epochs": 1, "train_batch_size": 2, "eval_batch_size": 2},
+        "seeds": [1],
+        "output_root": "../runs",
+    }
+    (configs / "local.yaml").write_text(json.dumps(raw), encoding="utf-8")
+
+    (result,) = run_experiment(load_config(configs / "local.yaml"))
+    assert result["status"] == "done"
+    run_dir = tmp_path / "runs" / result["run_id"]
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    env = json.loads((run_dir / "environment.json").read_text(encoding="utf-8"))
+    fingerprint = model_fingerprint(model_dir)
+    assert config["model_fingerprint"] == fingerprint
+    assert env["model"] == {
+        "name": "../models/tiny",
+        "path": str(model_dir.resolve()),
+        "fingerprint": fingerprint,
+    }
+
+    # The same model in another directory is the same run: skipped, not trained again.
+    shutil.copytree(model_dir, tmp_path / "elsewhere" / "tiny")
+    raw["model"]["name"] = "../elsewhere/tiny"
+    (configs / "moved.yaml").write_text(json.dumps(raw), encoding="utf-8")
+    (moved,) = run_experiment(load_config(configs / "moved.yaml"))
+    assert (moved["run_id"], moved["status"]) == (result["run_id"], "skipped")

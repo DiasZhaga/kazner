@@ -10,7 +10,9 @@ from kazner.config import (
     code_state,
     data_fingerprint,
     environment,
+    is_local_model,
     load_config,
+    model_fingerprint,
     parse_config,
     run_id,
     write_run_files,
@@ -80,6 +82,11 @@ def test_fp16_accepts_booleans():
         ({"model.max_len": 12.5}, r"model\.max_len: expected an integer"),
         ({"model.max_len": True}, r"model\.max_len: expected an integer"),
         ({"model.add_prefix_space": "yes"}, r"model\.add_prefix_space: expected true or false"),
+        ({"model.revision": ""}, r"model\.revision: expected a non-empty string"),
+        (
+            {"model.name": "./models/m", "model.revision": "main"},
+            r"model\.revision: only applies to Hugging Face Hub models",
+        ),
         ({"training.epochs": 0}, r"training\.epochs: must be positive"),
         ({"training.fp16": "maybe"}, r"training\.fp16: must be auto, true or false"),
         ({"training.load_best_model_at_end": "yes"}, r"expected true or false"),
@@ -132,6 +139,7 @@ def test_same_config_gives_the_same_id():
         {"data.subsample_seed": 7},
         {"model.max_len": 64},
         {"model.add_prefix_space": True},
+        {"model.revision": "f171d7baecaf37b5da5a3616d8833b9969753535"},
         {"method.name": "lora"},
         {"method.lora.r": 16},
         {"training.learning_rate": 1e-4},
@@ -167,6 +175,71 @@ def test_data_location_does_not_change_the_id_but_data_content_does(tmp_path):
 def test_code_reference_changes_the_id():
     run = cfg().expand()[0]
     assert run_id(run, "tree-a") != run_id(run, "tree-b")
+
+
+# --- model identity --------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "local"),
+    [
+        ("bert-base-multilingual-cased", False),
+        ("kz-transformers/kaz-roberta-conversational", False),  # org/name is a Hub ID
+        ("./models/mbert-kk", True),
+        ("../models/mbert-kk", True),
+        (".\\models\\mbert-kk", True),
+        ("/srv/models/mbert-kk", True),
+        ("C:\\models\\mbert-kk", True),
+        ("C:/models/mbert-kk", True),
+    ],
+)
+def test_local_model_names_are_explicit_paths(name, local):
+    assert is_local_model(name) is local
+
+
+def test_local_model_is_resolved_against_the_yaml_file(tmp_path):
+    path = tmp_path / "configs" / "c.yaml"
+    path.parent.mkdir()
+    path.write_text("name: x\ndata: {dir: d}\nmodel: {name: ../models/m}\n", encoding="utf-8")
+    assert load_config(path).model_location() == str((tmp_path / "models" / "m").resolve())
+    assert cfg(**{"model.name": "org/model"}).model_location() == "org/model"
+
+
+def write_model(directory: Path, config_text: bytes) -> Path:
+    (directory / "sub").mkdir(parents=True)
+    (directory / "config.json").write_bytes(config_text)
+    (directory / "model.safetensors").write_bytes(b"\x00weights\r\n")
+    (directory / "sub" / "vocab.txt").write_bytes(b"[PAD]\n[UNK]\n")
+    return directory
+
+
+def test_model_fingerprint_ignores_location_and_line_endings(tmp_path):
+    lf = write_model(tmp_path / "a", b'{\n  "hidden_size": 8\n}\n')
+    crlf = write_model(tmp_path / "elsewhere" / "b", b'{\r\n  "hidden_size": 8\r\n}\r\n')
+    (crlf / ".cache").mkdir()
+    (crlf / ".cache" / "lock").write_bytes(b"ignored")  # dot-entries are not part of the model
+    assert model_fingerprint(lf) == model_fingerprint(crlf)
+
+    a = cfg(**{"model.name": "./a"}).expand()[0]
+    b = cfg(**{"model.name": "../elsewhere/b"}).expand()[0]
+    assert run_id(a, "tree", "data", model_fingerprint(lf)) == run_id(
+        b, "tree", "data", model_fingerprint(crlf)
+    )
+
+
+def test_model_fingerprint_changes_with_content(tmp_path):
+    base = model_fingerprint(write_model(tmp_path / "a", b"{}\n"))
+    other = write_model(tmp_path / "b", b"{}\n")
+    (other / "model.safetensors").write_bytes(b"\x00weights\n")  # binary: CRLF not normalised
+    assert model_fingerprint(other) != base
+    renamed = write_model(tmp_path / "c", b"{}\n")
+    (renamed / "sub" / "vocab.txt").rename(renamed / "sub" / "vocab2.txt")
+    assert model_fingerprint(renamed) != base
+
+
+def test_missing_model_directory_names_the_key(tmp_path):
+    with pytest.raises(ConfigError, match=r"model\.name: local model directory .* does not exist"):
+        model_fingerprint(tmp_path / "missing")
 
 
 # --- code identity on a temporary git repository ---------------------------------------
@@ -238,6 +311,7 @@ def test_run_files_record_config_and_environment(tmp_path):
     saved_env = json.loads((tmp_path / "r" / "environment.json").read_text(encoding="utf-8"))
     assert config["run_id"] == "0123456789ab"
     assert config["data_fingerprint"] == "f" * 64
+    assert config["model_fingerprint"] is None  # a Hub model is identified by name
     assert config["seed"] == 42 and config["data"]["dir"] == "data"
     assert saved_env["code"]["code_ref"] == "abc"
     assert saved_env["packages"]["transformers"] == "5.0.0"

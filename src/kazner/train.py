@@ -34,6 +34,8 @@ from kazner.config import (
     code_state,
     data_fingerprint,
     environment,
+    is_local_model,
+    model_fingerprint,
     run_id,
     write_run_files,
 )
@@ -178,6 +180,7 @@ def train_one(
     env: dict[str, Any],
     corpus: dict[str, Any],
     data_ref: str = "",
+    model_ref: str = "",
 ) -> dict[str, Any]:
     """Train and evaluate a single seed; returns the metrics written to ``metrics.json``."""
     import torch
@@ -188,10 +191,12 @@ def train_one(
     fp16 = resolve_fp16(t.fp16)
     cuda = torch.cuda.is_available()
 
-    write_run_files(run_dir, run, rid, env, data_ref)
+    write_run_files(run_dir, run, rid, env, data_ref, model_ref)
 
     set_all_seeds(run.seed)  # immediately before the model is built, as in the pilot
-    built = build_model(run.method, run.model.name, label2id, id2label)
+    built = build_model(
+        run.method, corpus["model_location"], label2id, id2label, revision=run.model.revision
+    )
 
     args = TrainingArguments(
         output_dir=str(run_dir / "checkpoints"),
@@ -300,13 +305,16 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
         sub_tokens = sub_tokens[: cfg.data.max_train_samples]
         sub_labels = sub_labels[: cfg.data.max_train_samples]
 
-    prefix = cfg.model.add_prefix_space
-    kwargs = {} if prefix is None else {"add_prefix_space": prefix}
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model.name, **kwargs)
+    location, prefix = cfg.model_location(), cfg.model.add_prefix_space
+    kwargs = {} if cfg.model.revision is None else {"revision": cfg.model.revision}
+    if prefix is not None:
+        kwargs["add_prefix_space"] = prefix
+    tokenizer = AutoTokenizer.from_pretrained(location, **kwargs)
     check_word_tokenization(tokenizer, sub_tokens, prefix)
     max_len = cfg.model.max_len
     test_tokens, test_labels = splits["test"]
     return {
+        "model_location": location,
         "tokenizer": tokenizer,
         "label2id": label2id,
         "id2label": id2label,
@@ -316,6 +324,25 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
         "test_words": test_tokens,
         "test_gold": test_labels,
         "test_word_ids": _word_ids(tokenizer, test_tokens, max_len),
+    }
+
+
+def model_identity(cfg: ExperimentConfig, model_ref: str = "") -> dict[str, Any]:
+    """The model the runs use, for ``environment.json``.
+
+    Hub model: name, requested revision and the commit it resolved to. Local directory: the
+    name as written, the resolved path and the content fingerprint (``model_ref``).
+    """
+    if is_local_model(cfg.model.name):
+        return {"name": cfg.model.name, "path": cfg.model_location(), "fingerprint": model_ref}
+    from transformers import AutoConfig
+
+    kwargs = {} if cfg.model.revision is None else {"revision": cfg.model.revision}
+    config = AutoConfig.from_pretrained(cfg.model.name, **kwargs)
+    return {
+        "name": cfg.model.name,
+        "revision": cfg.model.revision,
+        "commit": getattr(config, "_commit_hash", None),
     }
 
 
@@ -334,10 +361,12 @@ def run_experiment(
     env = environment(state)
     output_root = cfg.resolve(cfg.output_root)
     data_ref = data_fingerprint(cfg.resolve(cfg.data.dir))
+    local = is_local_model(cfg.model.name)
+    model_ref = model_fingerprint(cfg.model_location()) if local else ""
 
     results, pending = [], []
     for run in cfg.expand():
-        rid = run_id(run, state.code_ref, data_ref)
+        rid = run_id(run, state.code_ref, data_ref, model_ref)
         run_dir = output_root / rid
         if (run_dir / METRICS_FILE).exists() and not force:
             print(f"[skip] {rid} {run.name} seed={run.seed}: already complete")
@@ -345,12 +374,14 @@ def run_experiment(
         else:
             pending.append((run, rid, run_dir))
 
-    corpus = prepare_corpus(cfg) if pending else None
+    if pending:
+        corpus = prepare_corpus(cfg)
+        env = {**env, "model": model_identity(cfg, model_ref)}
     for run, rid, run_dir in pending:
         if run_dir.exists():
             shutil.rmtree(run_dir)  # incomplete or forced: start clean
         print(f"[run] {rid} {run.name} seed={run.seed} -> {run_dir}")
-        m = train_one(run, rid, run_dir, env, corpus, data_ref)
+        m = train_one(run, rid, run_dir, env, corpus, data_ref, model_ref)
         print(
             f"[done] {rid} test F1 contract={m['test_contract']['f1']:.4f} "
             f"trainer={m['test_trainer']['f1']:.4f}"

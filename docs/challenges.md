@@ -284,3 +284,28 @@ on the synthetic fixture and saved in KazRoBERTa's layout (`config.json`, `vocab
 `merges.txt`). transformers builds such a tokenizer through a code path that `tokenizers`
 deprecates, so those tests filter that one warning. Suites run with
 `-W error::DeprecationWarning` stay green.
+
+## 2026-10-22 — Identifying the model of a run: Hub revision and local checkpoints
+
+**Problem.** A run ID covered the config, the code and the data, but the model only by its
+name. A Hub repository can change under the same name; KazRoBERTa's was last modified in
+October 2025. The vocabulary study (#35–#37) will also train from locally produced checkpoints.
+For those, a path says nothing about the content, and a relative path passed straight to
+`from_pretrained` would depend on the current working directory.
+
+**Decisions.**
+- `model.name` is a local directory only when written as a path: `./`, `../`, absolute, or
+  with a drive letter. Hub IDs look like relative paths (`org/name`). Guessing by checking
+  whether a directory exists would make the meaning of a config depend on the machine.
+- A local directory is hashed by content, like the data. The fingerprint covers each file's
+  relative path and content; dot-entries (caches, locks) are skipped. Line endings of `.json`
+  and `.txt` files are normalised: `save_pretrained` on this Windows laptop wrote
+  `config.json` and the tokenizer files with CRLF. Without normalisation, the same checkpoint
+  saved on Windows and on Linux would get two run IDs. Binary files are hashed byte for byte.
+- For Hub models, the requested `model.revision` is hashed. The commit that it resolved to is
+  recorded in `environment.json` (`AutoConfig._commit_hash`), but it is not hashed. Hashing it
+  would need the Hub or the cache just to compute IDs, and without a pin it would silently
+  start new runs whenever the repository changed. Reported results should therefore pin a
+  commit; that is a rule for the experiment configs (#32), not something the code enforces.
+- `model.revision` together with a local directory is a configuration error rather than
+  being ignored.

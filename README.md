@@ -218,12 +218,29 @@ input and as running text. If it does not, training stops with an error that nam
 without the flag.
 
 Each run gets a deterministic **run ID**: the first 12 hex characters of
-sha256(resolved single-seed config + code reference). The code reference is the git tree
-hash of `src/kazner` (`git rev-parse HEAD:src/kazner`). Commits that touch only
-documentation, configs or CI therefore keep the ID, while any change to the package code
-changes it. `name` and `output_root` are labels and are not hashed. Each run directory
-records `config.json` and `environment.json`, which holds the full commit, the tree hash,
-dirty flags, library versions, OS, CUDA and GPU.
+sha256(resolved single-seed config + code reference + data and model fingerprints). The code
+reference is the git tree hash of `src/kazner` (`git rev-parse HEAD:src/kazner`). Commits that
+touch only documentation, configs or CI therefore keep the ID, while any change to the package
+code changes it. `name` and `output_root` are labels and are not hashed. The data directory is
+hashed by content, not by path. Each run directory records `config.json` and
+`environment.json`. The latter holds the full commit, the tree hash, dirty flags, library
+versions, OS, CUDA and GPU, and the model the runs used (see below).
+
+**Which model.** `model.name` is a Hugging Face Hub ID (`bert-base-multilingual-cased`,
+`org/name`) or a local directory. A local directory must be written as an explicit path:
+`./…`, `../…` or absolute, so that `org/name` is never mistaken for one. A relative path is
+resolved against the YAML file, like `data.dir`.
+
+- **Hub model.** `model.revision` (branch, tag or commit) is passed to `from_pretrained` for
+  the tokenizer and the model, and it is hashed. `environment.json` records the commit that
+  the revision resolved to. Pin a commit for reported results: without a pin, a change on the
+  Hub keeps the run ID and shows up only in `environment.json`.
+- **Local directory** (e.g. a checkpoint after continued pre-training). Its path is not
+  hashed. The run ID uses a SHA-256 fingerprint of the directory's files instead (relative
+  path + content; dot-entries skipped). Line endings of `.json` and `.txt` files are
+  normalised, because `save_pretrained` writes CRLF on Windows. The same model in another
+  directory or on another OS therefore gets the same run ID. The fingerprint is stored in
+  `config.json` as `model_fingerprint`. `model.revision` is an error for a local directory.
 
 ## Adaptation methods
 
