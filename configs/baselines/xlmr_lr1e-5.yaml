@@ -1,0 +1,27 @@
+# Baseline learning-rate screen (#32) at 10% KazNERD, seed 42. Same protocol as the mBERT
+# runs of experiment B except the learning rate. Baselines, not causal evidence: see
+# docs/baselines.md. Select the rate by VALIDATION F1 (metrics.json: validation_best), never
+# by test; if the best rate is at the edge of the grid, extend the grid by one step first.
+name: baseline_xlmr_lr1e-5
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: FacebookAI/xlm-roberta-base
+  revision: "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089"  # pinned Hub commit (#31)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 1.0e-5
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42]
+output_root: ../../runs
