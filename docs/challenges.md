@@ -365,3 +365,19 @@ file, not a sample of the corpus. The split that is small enough to download, Fi
 - The Hub path was not exercised before the first real download, to respect the decision not
   to download yet. `--dry-run` reads only the parquet footers (row groups and compressed text
   size per row group), so access and the expected download size can be checked first.
+
+## 2026-10-25 — Read-ahead would have tripled the corpus download
+
+**Problem.** The metadata-only dry run of the corpus script (#34) showed row groups of 1,000
+documents with about 1.85 MiB of compressed text each. `HfFileSystem` opens files with
+fsspec's default buffering: 5 MiB blocks with `readahead`. Every range read would have fetched
+up to 5 MiB more than requested, so a 20 M-word sample would have cost about 380–580 MiB
+instead of about 120–170 MiB. Without a measurement this would only have shown up as a slow
+download.
+
+**Resolution (#42).** The Hub files are opened with `cache_type="none"`. A thin
+`CountingReader` sits between pyarrow and the file and counts the bytes actually read; the
+manifest records them as `bytes_read`. Tracing pyarrow's reads showed that a row group costs
+exactly one read of its text column chunk, while the footer is read once per file. The test
+now asserts exactly that property, rather than an arbitrary fraction of the file. The dry run
+against the Hub then measured the footers at 12.08 MiB for both files.

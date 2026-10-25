@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation). New `model.add_prefix_space` config key and `kazner fertility
   --add-prefix-space`; training now stops before it starts if pre-split words are tokenized
   differently from running text (#30).
+- The corpus download opened the Hub parquet files with fsspec's default 5 MiB read-ahead, which
+  would have fetched about three times the ~1.85 MiB of text per row group. The files are now
+  opened with `cache_type="none"`; `kazner.corpus.CountingReader` records the bytes read, and the
+  manifest stores them as `bytes_read` (#42).
 
 ## [0.1.0] - 2026-10-07
 

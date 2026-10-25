@@ -124,8 +124,10 @@ half of its letters are Cyrillic, and it has a letter specific to Kazakh, which 
 and English lines), is not an exact duplicate, and contains no KazNERD sentence of six or more
 words (any split; compared without case and punctuation). The rules are in `kazner.corpus`.
 `fineweb2_kaz_Cyrl.manifest.json` records the source, revision, row groups read, rules, the
-count of lines removed by each rule, the KazNERD fingerprint and the SHA-256 of the text. The
-corpus is never committed.
+count of lines removed by each rule, the KazNERD fingerprint, the SHA-256 of the text and
+`bytes_read`. The Hub files are opened without read-ahead, so every read is an exact range
+request and `bytes_read` is the download. A row group costs only its compressed text, about 1.85
+MiB per 1,000 documents; the footers add 12 MiB once per run. The corpus is never committed.
 
 ## Label alignment
 
