@@ -335,3 +335,33 @@ needs it.
 - The training subsample is defined in one place (`kazner.data.training_subsample`), shared by
   training and the analysis. Word frequencies and "seen" entities therefore come from exactly
   the sentences a run was trained on.
+
+## 2026-10-25 — A reproducible corpus sample on a slow connection
+
+**Problem.** Continued pre-training (#36) needs about 20 M words of unlabeled Kazakh text.
+The FineWeb-2 `kaz_Cyrl` train split is 6.8 GB of parquet. On the available connection
+(≈ 90 KB/s, measured when the baseline checkpoints were downloaded) that would take about 21
+hours. The obvious bounded alternative, the first N streamed documents, is the head of one
+file, not a sample of the corpus. The split that is small enough to download, FineWeb-2's
+`test`, is explicitly marked "should not be trained on".
+
+**Decisions.**
+- Sample by parquet row groups. All row groups of both train files are put in an order fixed
+  by a seed and read one at a time, text column only, until the cleaned text reaches the
+  target. The download stays proportional to the sample, the sample spreads across the
+  corpus, and the result is reproducible from (revision, seed, target, rules). The manifest
+  lists every row group read.
+- Clean at the line (paragraph) level. FineWeb-2 is deduplicated and language-identified at
+  document level, but boilerplate lines repeat across documents and Kazakh pages contain
+  Russian and English paragraphs. Russian lines would put Russian pieces into the extended
+  vocabulary (#35). A line is therefore kept only if it contains a letter specific to Kazakh.
+  Short Kazakh lines without one are lost; this is accepted and counted.
+- Overlap with KazNERD is checked by containment, not by equality. KazNERD comes from Khabar
+  news transcripts of 2020, and FineWeb-2 crawls run to 2024, so a web paragraph may contain a
+  test sentence. Lines and sentences are compared as case-folded word sequences without
+  punctuation, because KazNERD splits punctuation off (`барды .`). Sentences shorter than six
+  words are not used: they are too generic to be evidence of overlap and would remove ordinary
+  lines.
+- The Hub path was not exercised before the first real download, to respect the decision not
+  to download yet. `--dry-run` reads only the parquet footers (row groups and compressed text
+  size per row group), so access and the expected download size can be checked first.

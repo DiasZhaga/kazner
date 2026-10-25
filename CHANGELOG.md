@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frequency; logistic regression (Newton's method in NumPy) with a sentence bootstrap;
   `entities.csv` with the fixed entity subsets and per-run hits. Reproduces experiment B2;
   `docs/fragmentation.md` (#33).
+- Unlabeled Kazakh corpus for continued pre-training: `kazner.corpus` (NFC, length and
+  Kazakh-script rules, exact dedup, removal of lines that contain a KazNERD sentence, seeded
+  row-group sample of parquet files, per-rule counts) and `scripts/download_kk_corpus.py`
+  (FineWeb-2 `kaz_Cyrl` train split at a pinned commit, `--dry-run`, manifest with SHA-256) (#34).
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
