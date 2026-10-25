@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from kazner.config import data_fingerprint
-from kazner.corpus import SentenceIndex, build_corpus
+from kazner.corpus import CountingReader, SentenceIndex, build_corpus
 from kazner.data import read_splits
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,20 +35,33 @@ FILES = ("data/kaz_Cyrl/train/000_00000.parquet", "data/kaz_Cyrl/train/001_00000
 DEFAULT_OUT = ROOT / "data" / "kk_corpus" / "fineweb2_kaz_Cyrl.txt"
 
 
-def open_files(local: Path | None, revision: str) -> tuple[list[Any], list[str]]:
-    """Parquet files to sample from: the pinned Hub files, or ``*.parquet`` in ``local``."""
+def open_files(
+    local: Path | None, revision: str
+) -> tuple[list[Any], list[str], list[CountingReader]]:
+    """Parquet files to sample from, their names, and the readers counting bytes read.
+
+    Hub files are opened with ``cache_type="none"``: fsspec would otherwise read
+    ahead in 5 MiB blocks and fetch several times the bytes the parquet reader
+    asks for (#42).
+    """
     import pyarrow.parquet as pq
 
     if local is not None:
         paths = sorted(local.glob("*.parquet"))
         if not paths:
             raise SystemExit(f"no .parquet files in {local}")
-        return [pq.ParquetFile(path) for path in paths], [path.name for path in paths]
+        readers = [CountingReader(path.open("rb")) for path in paths]
+        return [pq.ParquetFile(r) for r in readers], [p.name for p in paths], readers
     from huggingface_hub import HfFileSystem
 
     fs = HfFileSystem()
-    hub = [fs.open(f"datasets/{REPO}@{revision}/{path}", "rb") for path in FILES]
-    return [pq.ParquetFile(f) for f in hub], list(FILES)
+    readers = [
+        CountingReader(
+            fs.open(f"datasets/{REPO}@{revision}/{path}", "rb", cache_type="none")
+        )
+        for path in FILES
+    ]
+    return [pq.ParquetFile(r) for r in readers], list(FILES), readers
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    files, names = open_files(args.local, args.revision)
+    files, names, readers = open_files(args.local, args.revision)
     source = "local " + str(args.local) if args.local else f"{REPO}@{args.revision[:7]}"
     print(
         f"{source}: {sum(f.num_row_groups for f in files)} row groups; target {args.words:,} words"
@@ -82,10 +95,11 @@ def main(argv: list[str] | None = None) -> int:
                 for c in range(meta.num_columns)
             ]
             text = sum(c.total_compressed_size for c in chunks if c.path_in_schema == "text")
+            read_mib = sum(r.bytes_read for r in readers) / 2**20
             print(
                 f"  {name}: {meta.num_rows:,} documents, {meta.num_row_groups} row groups, "
                 f"{text / max(1, meta.num_row_groups) / 2**20:.2f} MiB of compressed text "
-                "per row group (the only column read)"
+                f"per row group (the only column read); {read_mib:.1f} MiB read"
             )
         return 0
 
@@ -95,8 +109,11 @@ def main(argv: list[str] | None = None) -> int:
     start = time.perf_counter()
 
     def progress(groups: int, words: int) -> None:
+        read_mib = sum(r.bytes_read for r in readers) / 2**20
         print(
-            f"  row group {groups}: {words:,} words, {time.perf_counter() - start:.0f}s", flush=True
+            f"  row group {groups}: {words:,} words, {read_mib:.1f} MiB read, "
+            f"{time.perf_counter() - start:.0f}s",
+            flush=True,
         )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "kaznerd": {"dir": str(args.kaznerd), "fingerprint": data_fingerprint(args.kaznerd)},
         **sample,
+        "bytes_read": sum(r.bytes_read for r in readers),
         "seconds": round(time.perf_counter() - start, 1),
     }
     manifest_path = args.out.with_name(args.out.stem + ".manifest.json")
