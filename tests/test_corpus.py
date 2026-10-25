@@ -4,6 +4,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import sys
+import types
 import unicodedata
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import pytest
 from kazner.corpus import (
     STAGES,
     CorpusBuilder,
+    CountingReader,
     SentenceIndex,
     build_corpus,
     is_kazakh,
@@ -182,6 +185,7 @@ def test_script_writes_corpus_and_manifest_from_local_parquet(parquet_dir, tmp_p
     assert manifest["line_counts"]["kept"] == 12 == manifest["lines"]
     assert manifest["rules"]["kaznerd_sentences_indexed"] == 1
     assert manifest["sha256"] == hashlib.sha256(out.read_bytes()).hexdigest()
+    assert manifest["bytes_read"] > 0
     assert b"\r\n" not in out.read_bytes()
     assert not out.with_name("kk.txt.part").exists()
 
@@ -193,3 +197,39 @@ def test_dry_run_reads_only_metadata(parquet_dir, tmp_path, capsys):
     printed = capsys.readouterr().out
     assert "part0.parquet: 6 documents, 3 row groups" in printed
     assert not out.exists()
+
+def test_counting_reader_counts_only_the_bytes_read(parquet_dir):
+    """#42: the parquet reader asks for ranges, not the whole file."""
+    pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    path = parquet_dir / "part0.parquet"
+    reader = CountingReader(path.open("rb"))
+    parquet = pq.ParquetFile(reader)
+    before = reader.bytes_read
+    table = parquet.read_row_group(0, columns=["text"])
+    assert table.num_rows > 0
+    # A row group is a fraction of the file; the metadata read is pyarrow's own.
+    assert 0 < reader.bytes_read - before < path.stat().st_size
+
+
+def test_open_files_asks_the_hub_for_no_cache(monkeypatch, parquet_dir):
+    """#42: fsspec read-ahead is what tripled the download."""
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    pq.write_table(pa.table({"text": [KEPT]}), parquet_dir / "part0.parquet")
+    calls = []
+
+    class FakeFS:
+        def open(self, path, mode="rb", **kwargs):
+            calls.append((path, mode, kwargs.get("cache_type")))
+            return (parquet_dir / "part0.parquet").open("rb")
+
+    fake = types.ModuleType("huggingface_hub")
+    fake.HfFileSystem = FakeFS
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    script = load_script()
+    files, names, readers = script.open_files(None, script.REVISION)
+    assert names == list(script.FILES)
+    assert [call[2] for call in calls] == ["none"] * len(script.FILES)
+    assert [type(reader) for reader in readers] == [CountingReader] * len(script.FILES)
+    assert files and len(files) == len(script.FILES)

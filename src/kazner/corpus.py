@@ -41,6 +41,32 @@ STAGES = ("lines", "too_short", "too_long", "not_kazakh", "duplicate", "kaznerd"
 
 _WORD = re.compile(r"\w+")
 
+class CountingReader:
+    """Read-only file wrapper that counts the bytes read through it (#42).
+
+    A parquet reader seeks and reads exact ranges; with ``cache_type="none"``
+    on the Hub filesystem nothing else is fetched, so the count is the number
+    of bytes downloaded."""
+
+    def __init__(self, raw: BinaryIO) -> None:
+        self._raw = raw
+        self.bytes_read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._raw.read(size)
+        self.bytes_read += len(data)
+        return data
+
+    def readinto(self, buffer: Any) -> int:
+        count = self._raw.readinto(buffer)
+        self.bytes_read += count or 0
+        return count or 0
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._raw, name)
+
+
+
 
 def normalize_line(line: str) -> str:
     """Unicode NFC, whitespace runs collapsed to one space, stripped."""
