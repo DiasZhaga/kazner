@@ -40,3 +40,4 @@ Status: **Met** = implemented and tested; **Partial** = part of the requirement 
 | #30 Byte-level BPE prefix space | FR2, FR4 | `tests/test_align.py`, `tests/test_train.py`, `tests/test_fertility.py` (offline byte-level BPE fixture); `tests/test_network.py` (mBERT, XLM-R, KazRoBERTa) |
 | #31 Model identity | NFR1, NFR2 | `tests/test_config.py` (path rule, resolution, fingerprint vs location/CRLF/content), `tests/test_methods.py`, `tests/test_train.py` (smoke: training from a local directory; a moved copy is skipped as the same run) |
 | #33 Fragmentation analysis | FR4 (goal G3) | `tests/test_fragmentation.py` (hand-computed tables, cross-product odds ratio, CLI on synthetic runs); `docs/fragmentation.md` (reproduces experiment B2) |
+| #34 Unlabeled Kazakh corpus | FR4 (goal G3), NFR1, NFR7 | `tests/test_corpus.py` (line rules, KazNERD overlap, seeded row groups, the script offline on synthetic parquet) |

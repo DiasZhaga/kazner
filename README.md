@@ -106,6 +106,27 @@ silently.
 redistribute it: `data/` is git-ignored, and the fixtures in `tests/data` are synthetic
 sentences written for the tests. If you use the data, cite [1].
 
+### Unlabeled Kazakh text (vocabulary study, #34)
+
+```bash
+python scripts/download_kk_corpus.py --dry-run          # parquet metadata only: row groups, sizes
+python scripts/download_kk_corpus.py --words 20000000   # -> data/kk_corpus/fineweb2_kaz_Cyrl.txt
+```
+
+The continued pre-training of #36 uses Kazakh web text from FineWeb-2 (`kaz_Cyrl`, ODC-By 1.0),
+pinned to the dataset commit `af9c133`. Only the train split is used: the dataset card says the
+small `test` split should not be trained on. Row groups of the two train files are read in an
+order fixed by `--seed` (default 42) until `--words` words are kept. Only those row groups are
+downloaded, and the sample still spreads over the whole corpus rather than its first rows.
+
+Each paragraph line is NFC-normalised and kept only if it has 5–500 words, is Kazakh (at least
+half of its letters are Cyrillic, and it has a letter specific to Kazakh, which drops Russian
+and English lines), is not an exact duplicate, and contains no KazNERD sentence of six or more
+words (any split; compared without case and punctuation). The rules are in `kazner.corpus`.
+`fineweb2_kaz_Cyrl.manifest.json` records the source, revision, row groups read, rules, the
+count of lines removed by each rule, the KazNERD fingerprint and the SHA-256 of the text. The
+corpus is never committed.
+
 ## Label alignment
 
 Words are labelled, but models see subwords. `kazner.align` follows the pilot's rule: the
@@ -367,13 +388,14 @@ src/kazner/
   contract.py      word-level prediction schema, validation, pilot converter
   evaluate.py      seqeval-based evaluator, metrics.json
   fertility.py     tokenizer fertility analysis
+  corpus.py        unlabeled Kazakh corpus: line rules, KazNERD removal, seeded sample
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
   fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
   cli.py           kazner evaluate | fertility | train | aggregate | fragmentation
-scripts/           download_kaznerd.py, convert_pilot_predictions.py,
+scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
 docs/              technology-choices.md, traceability.md, reproduction.md, fragmentation.md,
