@@ -40,7 +40,7 @@ from kazner.config import (
     write_run_files,
 )
 from kazner.contract import TRUNCATED_PRED, Predictions, write_predictions
-from kazner.data import build_label2id, read_splits, sample_fraction
+from kazner.data import build_label2id, read_splits, training_subsample
 from kazner.evaluate import compute_metrics, evaluate_predictions
 from kazner.methods import build_model
 
@@ -298,12 +298,10 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
     splits = read_splits(cfg.resolve(cfg.data.dir))
     train_tokens, train_labels = splits["train"]
     label2id, id2label = build_label2id(train_labels)  # always from the FULL train split
-    sub_tokens, sub_labels = sample_fraction(
-        train_tokens, train_labels, cfg.data.train_fraction, cfg.data.subsample_seed
+    d = cfg.data
+    sub_tokens, sub_labels = training_subsample(
+        train_tokens, train_labels, d.train_fraction, d.subsample_seed, d.max_train_samples
     )
-    if cfg.data.max_train_samples is not None:
-        sub_tokens = sub_tokens[: cfg.data.max_train_samples]
-        sub_labels = sub_labels[: cfg.data.max_train_samples]
 
     location, prefix = cfg.model_location(), cfg.model.add_prefix_space
     kwargs = {} if cfg.model.revision is None else {"revision": cfg.model.revision}
