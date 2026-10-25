@@ -12,6 +12,7 @@ import pytest
 from kazner.corpus import (
     STAGES,
     CorpusBuilder,
+    CountingReader,
     SentenceIndex,
     build_corpus,
     is_kazakh,
@@ -184,6 +185,7 @@ def test_script_writes_corpus_and_manifest_from_local_parquet(parquet_dir, tmp_p
     assert manifest["sha256"] == hashlib.sha256(out.read_bytes()).hexdigest()
     assert b"\r\n" not in out.read_bytes()
     assert not out.with_name("kk.txt.part").exists()
+    assert manifest["bytes_read"] > 0  # tiny files: the footer reads cover most of them
 
 
 def test_dry_run_reads_only_metadata(parquet_dir, tmp_path, capsys):
@@ -192,4 +194,54 @@ def test_dry_run_reads_only_metadata(parquet_dir, tmp_path, capsys):
     assert load_script().main(args) == 0
     printed = capsys.readouterr().out
     assert "part0.parquet: 6 documents, 3 row groups" in printed
+    assert "metadata read:" in printed
     assert not out.exists()
+
+
+# --- download accounting -----------------------------------------------------------------
+
+
+def test_counting_reader_counts_what_is_read():
+    reader = CountingReader(io.BytesIO(b"0123456789"))
+    assert reader.read(4) == b"0123"
+    reader.seek(8)
+    assert reader.read() == b"89"
+    buffer = bytearray(3)
+    reader.seek(1)
+    assert reader.readinto(buffer) == 3 and bytes(buffer) == b"123"
+    assert reader.bytes_read == 4 + 2 + 3 and reader.tell() == 4
+
+
+def test_reading_a_row_group_reads_exactly_its_text_chunk(tmp_path):
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    texts = [f"{KEPT} {i} " + "сөз " * 200 for i in range(1000)]  # 50 row groups of 20
+    table = pa.table({"text": texts, "url": [f"https://example.kz/{i}" for i in range(1000)]})
+    path = tmp_path / "big.parquet"
+    pq.write_table(table, path, row_group_size=20, compression="none")
+    reader = CountingReader(path.open("rb"))
+    parquet = pq.ParquetFile(reader)  # reads the footer, once per file
+    before = reader.bytes_read
+    parquet.read_row_group(7, columns=["text"])
+    chunk = parquet.metadata.row_group(7).column(0)
+    assert chunk.path_in_schema == "text"
+    assert reader.bytes_read - before == chunk.total_compressed_size  # no other column, no extra
+
+
+def test_hub_files_are_opened_without_read_ahead(parquet_dir, monkeypatch):
+    huggingface_hub = pytest.importorskip("huggingface_hub")
+    opened = []
+
+    class FakeHubFileSystem:
+        def open(self, path, mode, **kwargs):
+            opened.append((path, mode, kwargs))
+            return (parquet_dir / "part0.parquet").open("rb")
+
+    monkeypatch.setattr(huggingface_hub, "HfFileSystem", FakeHubFileSystem)
+    script = load_script()
+    files, names, readers = script.open_files(None, script.REVISION)
+    assert names == list(script.FILES) and len(files) == len(readers) == 2
+    for (path, mode, kwargs), name in zip(opened, script.FILES, strict=True):
+        assert path == f"datasets/{script.REPO}@{script.REVISION}/{name}"
+        assert (mode, kwargs) == ("rb", {"cache_type": "none"})
+    assert all(reader.bytes_read > 0 for reader in readers)  # the footers
