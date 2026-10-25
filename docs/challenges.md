@@ -309,3 +309,29 @@ For those, a path says nothing about the content, and a relative path passed str
   commit; that is a rule for the experiment configs (#32), not something the code enforces.
 - `model.revision` together with a local directory is a configuration error rather than
   being ignored.
+
+## 2026-10-25 — Moving experiment B2 into the package: regression without scikit-learn
+
+**Problem.** The first B2 analysis was a script in the git-ignored `results/` folder, so the
+analysis behind a paper result was not versioned. It also used scikit-learn's
+`LogisticRegression`, which is not a kazner dependency: it is only installed because seqeval
+needs it.
+
+**Decisions.**
+- The regression is fitted by Newton's method in NumPy (about 15 lines). A test checks it
+  against the closed form: with one binary predictor, the maximum-likelihood odds ratio equals
+  the cross-product ratio of the 2 × 2 table. A ridge of 10⁻⁶ keeps the Hessian invertible
+  when a run makes no error or a category separates the outcome; such a run gets `null`
+  instead of a meaningless odds ratio.
+- Re-running B2 with the package reproduced every table cell exactly but moved the odds ratios
+  by up to 0.002. This was a genuine discrepancy, not noise. The script had stopped at
+  scikit-learn's default tolerance (10⁻⁴). With a tolerance of 10⁻¹⁰, scikit-learn agrees with
+  the package to six decimals (1.010645 vs 1.010646). The B2 conclusions are unchanged.
+- The CI now covers the group's mean over seeds: every bootstrap replicate refits all seeds on
+  the same resampled test sentences. The script bootstrapped seed 42 only.
+- The reference tokenizer is fixed and separate from the runs' models. For the baselines and
+  the vocabulary study, "fragmented" therefore always means fragmented under original mBERT,
+  so every model is scored on the same entity subsets.
+- The training subsample is defined in one place (`kazner.data.training_subsample`), shared by
+  training and the analysis. Word frequencies and "seen" entities therefore come from exactly
+  the sentences a run was trained on.

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kazner.aggregate import aggregate, format_table, load_runs, write_csv
+from kazner.aggregate import aggregate, config_field, format_table, load_runs, write_csv
 from kazner.cli import main
 
 
@@ -94,3 +94,12 @@ def test_cli_aggregate(runs, tmp_path, capsys):
         code = main(["aggregate", "--runs", str(runs), "--by", "method", "--out", str(out)])
     assert code == 0 and out.exists()
     assert "method=full  n=3" in capsys.readouterr().out
+
+
+def test_config_field_resolves_aliases_and_dotted_paths():
+    config = {"method": {"name": "lora", "lora": {"r": 16}}, "training": {"learning_rate": 1e-3}}
+    assert config_field(config, "method") == "lora"
+    assert config_field(config, "lr") == 1e-3
+    assert config_field(config, "method.lora.r") == 16
+    with pytest.raises(KeyError, match="model.name"):
+        config_field(config, "model")

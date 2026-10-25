@@ -115,6 +115,21 @@ def sample_fraction(
     return [tokens[i] for i in selected], [labels[i] for i in selected]
 
 
+def training_subsample(
+    tokens: Sentences,
+    labels: Sentences,
+    fraction: float,
+    seed: int,
+    max_samples: int | None = None,
+) -> tuple[Sentences, Sentences]:
+    """The sentences a run is trained on: :func:`sample_fraction`, then the first
+    ``max_samples`` (``data.max_train_samples``) if set."""
+    sub_tokens, sub_labels = sample_fraction(tokens, labels, fraction, seed)
+    if max_samples is not None:
+        sub_tokens, sub_labels = sub_tokens[:max_samples], sub_labels[:max_samples]
+    return sub_tokens, sub_labels
+
+
 def _fetch_url(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=60) as response:
         return response.read()
