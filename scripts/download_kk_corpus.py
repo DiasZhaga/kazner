@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from kazner.config import data_fingerprint
-from kazner.corpus import SentenceIndex, build_corpus
+from kazner.corpus import CountingReader, SentenceIndex, build_corpus
 from kazner.data import read_splits
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,20 +35,31 @@ FILES = ("data/kaz_Cyrl/train/000_00000.parquet", "data/kaz_Cyrl/train/001_00000
 DEFAULT_OUT = ROOT / "data" / "kk_corpus" / "fineweb2_kaz_Cyrl.txt"
 
 
-def open_files(local: Path | None, revision: str) -> tuple[list[Any], list[str]]:
-    """Parquet files to sample from: the pinned Hub files, or ``*.parquet`` in ``local``."""
+def open_files(
+    local: Path | None, revision: str
+) -> tuple[list[Any], list[str], list[CountingReader]]:
+    """Parquet files to sample from (the pinned Hub files, or ``*.parquet`` in ``local``),
+    their names, and the readers that count the bytes read from them."""
     import pyarrow.parquet as pq
 
     if local is not None:
         paths = sorted(local.glob("*.parquet"))
         if not paths:
             raise SystemExit(f"no .parquet files in {local}")
-        return [pq.ParquetFile(path) for path in paths], [path.name for path in paths]
-    from huggingface_hub import HfFileSystem
+        readers = [CountingReader(path.open("rb")) for path in paths]
+        names = [path.name for path in paths]
+    else:
+        from huggingface_hub import HfFileSystem
 
-    fs = HfFileSystem()
-    hub = [fs.open(f"datasets/{REPO}@{revision}/{path}", "rb") for path in FILES]
-    return [pq.ParquetFile(f) for f in hub], list(FILES)
+        fs = HfFileSystem()
+        # No read-ahead: fsspec's default fetches 5 MiB beyond every read, about three times the
+        # ~1.85 MiB of text in a row group. Every read is then an exact range request.
+        readers = [
+            CountingReader(fs.open(f"datasets/{REPO}@{revision}/{path}", "rb", cache_type="none"))
+            for path in FILES
+        ]
+        names = list(FILES)
+    return [pq.ParquetFile(reader) for reader in readers], names, readers
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,7 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    files, names = open_files(args.local, args.revision)
+    files, names, readers = open_files(args.local, args.revision)
+
+    def mib_read() -> float:
+        return sum(reader.bytes_read for reader in readers) / 2**20
+
     source = "local " + str(args.local) if args.local else f"{REPO}@{args.revision[:7]}"
     print(
         f"{source}: {sum(f.num_row_groups for f in files)} row groups; target {args.words:,} words"
@@ -87,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{text / max(1, meta.num_row_groups) / 2**20:.2f} MiB of compressed text "
                 "per row group (the only column read)"
             )
+        print(f"  metadata read: {mib_read():.2f} MiB")
         return 0
 
     splits = read_splits(args.kaznerd)
@@ -95,8 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     start = time.perf_counter()
 
     def progress(groups: int, words: int) -> None:
+        elapsed = time.perf_counter() - start
         print(
-            f"  row group {groups}: {words:,} words, {time.perf_counter() - start:.0f}s", flush=True
+            f"  row group {groups}: {words:,} words, {mib_read():.1f} MiB, {elapsed:.0f}s",
+            flush=True,
         )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +136,9 @@ def main(argv: list[str] | None = None) -> int:
         },
         "kaznerd": {"dir": str(args.kaznerd), "fingerprint": data_fingerprint(args.kaznerd)},
         **sample,
+        # Bytes read through the parquet readers (footers included); for the Hub, opened
+        # without read-ahead, this is the download.
+        "bytes_read": sum(reader.bytes_read for reader in readers),
         "seconds": round(time.perf_counter() - start, 1),
     }
     manifest_path = args.out.with_name(args.out.stem + ".manifest.json")

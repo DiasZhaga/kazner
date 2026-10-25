@@ -21,6 +21,7 @@ downloaded, and the sample still spreads over the whole corpus rather than its f
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 import unicodedata
 from collections import Counter
@@ -135,6 +136,45 @@ class CorpusBuilder:
                 self.out.write(data)
                 self._sha256.update(data)
                 self.words += n_words
+
+
+class CountingReader(io.RawIOBase):
+    """Read-only, seekable wrapper that counts the bytes read through it.
+
+    Wrapped around a remote file opened without read-ahead (``cache_type="none"``), the count
+    is the number of bytes downloaded.
+    """
+
+    def __init__(self, raw: Any) -> None:
+        super().__init__()
+        self.raw = raw
+        self.bytes_read = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        return self.raw.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self.raw.tell()
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.raw.read(size)
+        self.bytes_read += len(data)
+        return data
+
+    def readinto(self, buffer: Any) -> int:
+        data = self.read(len(buffer))
+        buffer[: len(data)] = data
+        return len(data)
+
+    def close(self) -> None:
+        self.raw.close()
+        super().close()
 
 
 def seeded_row_groups(files: Sequence[Any], seed: int) -> list[tuple[int, int]]:
