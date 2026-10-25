@@ -300,6 +300,21 @@ By default the `test_contract` metrics are used; `--metrics test_trainer` select
 pilot-compatible block. Incomplete runs are skipped with a warning. A group that mixes runs
 from different code versions (different `src/kazner` trees) is flagged.
 
+## Fragmentation and errors
+
+```bash
+kazner fragmentation --data data/kaznerd --runs runs/<id> runs/<id> ... --by method --out results/b2
+```
+
+The command relates the test errors of a set of runs to how strongly a fixed reference
+tokenizer (default mBERT) splits each word, with the word's frequency in the training subsample
+as the main confounder. It reports error rates by pieces, raw and within frequency strata,
+exact-span recall by pieces per word for entities seen and unseen in training, and a logistic
+regression (odds ratio per extra piece) with a bootstrap over test sentences. The entity table
+(`entities.csv`) depends only on the data, the training subsample and the reference tokenizer,
+so runs of different models are scored on the same entities. Method and the mBERT results
+(experiment B2): [docs/fragmentation.md](docs/fragmentation.md).
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -356,11 +371,13 @@ src/kazner/
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
-  cli.py           kazner evaluate | fertility | train | aggregate
+  fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
+  cli.py           kazner evaluate | fertility | train | aggregate | fragmentation
 scripts/           download_kaznerd.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
-docs/              technology-choices.md, traceability.md, reproduction.md, challenges.md
+docs/              technology-choices.md, traceability.md, reproduction.md, fragmentation.md,
+                   challenges.md
 .github/workflows/ ci.yml, release.yml
 ```
 
@@ -369,6 +386,7 @@ Documentation:
 - [technology choices](docs/technology-choices.md): every tool against the Lecture 5 criteria;
 - [requirements traceability](docs/traceability.md);
 - [reproduction](docs/reproduction.md);
+- [fragmentation and errors (B2)](docs/fragmentation.md);
 - [decisions and problems log](docs/challenges.md);
 - [changelog](CHANGELOG.md).
 

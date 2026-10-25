@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reproduction of the pilot's F1 = 0.9020 by `kazner train` (bit-identical test metrics), the
   three-seed PEFT comparison and the LoRA learning-rate × rank screen, recorded in
   `docs/reproduction.md` §3–4 (#11).
+- Fragmentation analysis `kazner fragmentation` (`kazner.fragmentation`): errors and exact-span
+  recall vs pieces per word under a fixed reference tokenizer, controlled for training
+  frequency; logistic regression (Newton's method in NumPy) with a sentence bootstrap;
+  `entities.csv` with the fixed entity subsets and per-run hits. Reproduces experiment B2;
+  `docs/fragmentation.md` (#33).
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
@@ -33,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model and is hashed; the resolved commit is recorded in `environment.json`. `model.name` may
   be a local directory (`./`, `../` or absolute), resolved against the YAML file and hashed by
   a content fingerprint (`model_fingerprint` in `config.json`) instead of its path (#31).
+- `kazner.data.training_subsample` is the one definition of a run's training sentences (used
+  by training and by the fragmentation analysis); `kazner.aggregate.config_field` is public (#33).
 
 ### Fixed
 - Byte-level BPE tokenizers (RoBERTa family) silently received pre-split words without their
