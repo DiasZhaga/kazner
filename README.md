@@ -323,6 +323,33 @@ By default the `test_contract` metrics are used; `--metrics test_trainer` select
 pilot-compatible block. Incomplete runs are skipped with a warning. A group that mixes runs
 from different code versions (different `src/kazner` trees) is flagged.
 
+## Vocabulary extension
+
+```bash
+# report only: pieces per word on KazNERD *validation* for several sizes, use of the new pieces
+kazner extend-vocab --corpus data/kk_corpus/fineweb2_kaz_Cyrl.txt --data data/kaznerd   --revision 3f076fdb1ab68d5b2880cb87a0886f315b8146f8 --out models/report
+# build: extended tokenizer + masked-LM model, old ids kept, new rows initialised by FVT
+kazner extend-vocab ... --size 10000 --out models/mbert-kk-10k
+```
+
+`kazner extend-vocab` (`kazner.vocab`) trains a WordPiece vocabulary on the unlabeled corpus
+with mBERT's own normalizer and pre-tokenizer. It keeps only learned pieces that are new,
+longer than one character, spellable with mBERT's vocabulary without `[UNK]`, and used on the
+corpus, ranked by how often they are used. The first N pieces are appended to the **WordPiece
+vocabulary itself**, so every old id is kept. `tokenizer.add_tokens` is not used: added tokens
+are matched as raw strings before WordPiece and would split words in the wrong places. Because
+no piece needs `[UNK]`, the extended tokenizer marks exactly the same words as `[UNK]` as mBERT,
+and only fragmentation changes. Each new embedding row, and its masked-LM output bias, is
+initialised as the mean of the pieces that spell it (FVT).
+
+The output directory holds the tokenizer, the model, `new_pieces.txt` and `extension.json`
+(base model and revision, corpus SHA-256, KazNERD fingerprint, learner settings and the
+per-size report). N is chosen from the report, never from test data. The WordPiece trainer
+breaks ties between equally frequent pairs in hash order, so a new learning run can differ
+slightly. `--pieces new_pieces.txt` therefore rebuilds a saved extension exactly. As a local
+directory, the extension is identified by its content fingerprint in run IDs (#31).
+Size report and the proposed N: [docs/vocabulary.md](docs/vocabulary.md).
+
 ## Fragmentation and errors
 
 ```bash
@@ -391,12 +418,14 @@ src/kazner/
   evaluate.py      seqeval-based evaluator, metrics.json
   fertility.py     tokenizer fertility analysis
   corpus.py        unlabeled Kazakh corpus: line rules, KazNERD removal, seeded sample
+  vocab.py         kazner extend-vocab: WordPiece vocabulary extension with FVT
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
   fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
-  cli.py           kazner evaluate | fertility | train | aggregate | fragmentation
+  cli.py           kazner evaluate | fertility | train | aggregate | fragmentation |
+                   extend-vocab
 scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
@@ -411,6 +440,7 @@ Documentation:
 - [requirements traceability](docs/traceability.md);
 - [reproduction](docs/reproduction.md);
 - [fragmentation and errors (B2)](docs/fragmentation.md);
+- [vocabulary extension: size report](docs/vocabulary.md);
 - [decisions and problems log](docs/challenges.md);
 - [changelog](CHANGELOG.md).
 

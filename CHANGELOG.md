@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Kazakh-script rules, exact dedup, removal of lines that contain a KazNERD sentence, seeded
   row-group sample of parquet files, per-rule counts) and `scripts/download_kk_corpus.py`
   (FineWeb-2 `kaz_Cyrl` train split at a pinned commit, `--dry-run`, manifest with SHA-256) (#34).
+- Vocabulary extension `kazner extend-vocab` (`kazner.vocab`): WordPiece candidates learned on
+  the corpus with mBERT's normalizer and pre-tokenizer (new, multi-character, spellable without
+  `[UNK]`, used; ranked by use), appended to the WordPiece vocabulary with every old id kept,
+  FVT initialisation of embeddings and masked-LM bias, a per-size report on KazNERD validation
+  and on the corpus, `--pieces` to rebuild a saved extension exactly (#35).
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)

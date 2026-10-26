@@ -381,3 +381,36 @@ manifest records them as `bytes_read`. Tracing pyarrow's reads showed that a row
 exactly one read of its text column chunk, while the footer is read once per file. The test
 now asserts exactly that property, rather than an arbitrary fraction of the file. The dry run
 against the Hub then measured the footers at 12.08 MiB for both files.
+
+## 2026-10-26 — Extending mBERT's vocabulary without changing anything but fragmentation
+
+**Problem.** The causal test (#37) needs an mBERT that fragments Kazakh less and is otherwise
+the same model. Three pitfalls stood in the way.
+- `tokenizer.add_tokens` adds "added tokens", which are matched as raw strings before WordPiece
+  runs. They would cut words in the wrong places and cannot be `##` continuation pieces.
+- A feasibility check showed that the learned pieces also eliminate mBERT's `[UNK]` words
+  (0.79% of KazNERD words). Removing `[UNK]` is a second mechanism that would mix with
+  fragmentation.
+- The `tokenizers` WordPiece trainer is not deterministic. A test that learned candidates
+  twice on the same synthetic corpus got two different orders: ties between equally frequent
+  pairs are broken in hash order.
+
+**Decisions.**
+- New pieces are appended to the WordPiece model's vocabulary itself, keeping every old id. A
+  test checks that an empty extension tokenizes all fixture splits identically, and a network
+  test does the same for the real mBERT tokenizer.
+- Only pieces that mBERT's vocabulary can spell without `[UNK]` are added, and no single
+  characters. The extended tokenizer then marks exactly the same words as `[UNK]`. On KazNERD
+  validation the `[UNK]` share is 0.788% before and after, for every size.
+- New rows are initialised by FVT: the mean embedding, and the mean masked-LM bias, of the
+  pieces that spell the new piece. The decoder stays tied to the embeddings, and a test checks
+  both rows and bias.
+- Candidates are ranked by use on the corpus, with ties broken by the piece. `new_pieces.txt`
+  is authoritative, and `--pieces` rebuilds an extension byte for byte.
+- N is chosen from KazNERD validation and corpus statistics (`docs/vocabulary.md`), never from
+  test data. 10,000 is proposed for the preregistration of #37.
+
+**Practical problem.** The size report took 5 h 12 min of wall-clock time instead of about 15
+minutes. The Windows event log shows 55 minutes of Modern Standby, and the rest apparently ran
+throttled while the display was off. Long CPU jobs get the same keep-awake wrapper as GPU
+series.
