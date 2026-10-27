@@ -1,0 +1,26 @@
+# Selected rate for mBERT (#32): 5e-5, the best validation F1 of the screen. The grid was
+# extended to 1e-4, where training diverged (validation F1 0.013). Seeds 42-44; seed 42 has
+# the same run ID as the screen run and is not trained again.
+name: baseline_mbert_best
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  revision: "3f076fdb1ab68d5b2880cb87a0886f315b8146f8"  # pinned Hub commit (#31)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 5.0e-5
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../../runs

@@ -107,6 +107,18 @@ only; the test column is shown for completeness.
   results are unaffected. Peak GPU memory was 5,899 MiB of 6,141 MiB, including about 700 MiB
   used by the desktop, so XLM-R never spilled into shared memory.
 
+### Grid extension (seed 42)
+
+| Model | lr | Validation F1 | Test F1 | Run |
+|---|---|---|---|---|
+| mBERT | 1e-4 | 0.0130 | 0.0134 | `ae02c9729dd2` |
+
+mBERT diverged at 1e-4: validation F1 was 0.0007, 0.013 and 0.004 after the three epochs, so
+the model stopped predicting entities. Full fine-tuning of BERT without warm-up at batch 8
+does not tolerate this rate. The selected rate for mBERT is therefore **5e-5**: the step above
+it is clearly worse (`configs/baselines/mbert_best.yaml`). The collapsed run is kept and
+reported, as the protocol requires.
+
 ### Still to run
 
 The remaining runs use the screen's code tree (a worktree at `a7ec27d`), so the whole series
