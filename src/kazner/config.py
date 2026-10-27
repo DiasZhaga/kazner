@@ -253,6 +253,12 @@ def _build(cls: type, raw: Any, prefix: str) -> Any:
     return cls(**kwargs)
 
 
+def build_dataclass(cls: type, raw: Any, prefix: str = "") -> Any:
+    """Build a (nested) config dataclass from a parsed YAML mapping with the same key checks
+    and type coercion as experiment configs; used by other config types (``kazner.pretrain``)."""
+    return _build(cls, raw, prefix)
+
+
 def _validate(cfg: ExperimentConfig) -> None:
     def check(ok: bool, key: str, message: str) -> None:
         if not ok:

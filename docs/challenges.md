@@ -437,3 +437,29 @@ the same model. Three pitfalls stood in the way.
 minutes. The Windows event log shows 55 minutes of Modern Standby, and the rest apparently ran
 throttled while the display was off. Long CPU jobs get the same keep-awake wrapper as GPU
 series.
+
+## 2026-10-27 — Training two vocabularies identically
+
+**Problem.** The causal test compares mBERT with and without the 10,000 added pieces after the
+same continued pre-training. "The same" is not automatic. Standard masked-LM training packs
+text into fixed-length token blocks and masks 15% of the *tokens*. With two vocabularies, the
+same text then becomes different blocks, a different number of steps and different masked
+content: the extended model would see more text per step and be asked to predict different
+words.
+
+**Decisions.**
+- Chunks are defined in words, by one reference tokenizer (original mBERT) for both arms.
+  Consecutive words are packed until 126 reference pieces. The extended model gets the same
+  chunks in fewer tokens, which is exactly the difference under study.
+- Masking is whole-word and decided per word from a generator seeded by (seed, chunk index).
+  Both arms predict the same words with the same 80/10/10 decisions. A test checks this with
+  two different tokenizers. Only the random replacement token differs, because the
+  vocabularies differ.
+- Masks are static, drawn once per chunk, which is enough for the planned single epoch. The
+  same number of chunks and the same seed also give the same batch order.
+- transformers 5 deprecates `warmup_ratio`; the warm-up fraction is passed as a float
+  `warmup_steps`.
+- Runs checkpoint every 2,000 steps and resume after an interruption, because the laptop's
+  Modern Standby has already paused long runs. Pilots use `--max-chunks`.
+- A model directory produced here is a local model for #31: its run ID uses the content
+  fingerprint, and it can be passed directly to `kazner train`. A smoke test does exactly that.

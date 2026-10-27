@@ -55,6 +55,17 @@ def _cmd_train(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pretrain(args: argparse.Namespace) -> int:
+    import os
+
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    from kazner.pretrain import load_pretrain_config, run_pretraining, with_max_chunks
+
+    cfg = with_max_chunks(load_pretrain_config(args.config), args.max_chunks)
+    run_pretraining(cfg, force=args.force)
+    return 0
+
+
 def _cmd_aggregate(args: argparse.Namespace) -> int:
     from kazner.aggregate import aggregate, format_table, load_runs, write_csv
 
@@ -170,6 +181,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="use only the first N sampled training sentences (changes the run ID)",
     )
     train.set_defaults(func=_cmd_train)
+
+    pre = commands.add_parser(
+        "pretrain",
+        help="continued masked-LM pre-training on an unlabeled corpus",
+        description="Whole-word masked-LM training on word chunks cut by a fixed reference "
+        "tokenizer, with the same masks for every vocabulary; writes a model directory per run ID.",
+    )
+    pre.add_argument("--config", type=Path, required=True, help="pre-training YAML file")
+    pre.add_argument("--force", action="store_true", help="re-run a completed run ID")
+    pre.add_argument(
+        "--max-chunks", type=int, help="use only the first N chunks (changes the run ID)"
+    )
+    pre.set_defaults(func=_cmd_pretrain)
 
     agg = commands.add_parser(
         "aggregate",

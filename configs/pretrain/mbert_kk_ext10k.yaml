@@ -1,0 +1,28 @@
+# Causal test (#37), treatment arm: mBERT with 10,000 Kazakh pieces added (#35), continued
+# masked-LM pre-training on the corpus of #34. Everything except the vocabulary equals
+# mbert_kk_original.yaml. Build the model first:
+#   kazner extend-vocab --corpus data/kk_corpus/fineweb2_kaz_Cyrl.txt --data data/kaznerd
+#     --revision 3f076fdb1ab68d5b2880cb87a0886f315b8146f8 --size 10000 --out models/mbert-kk-10k
+name: mbert_kk_ext10k
+corpus:
+  path: ../../data/kk_corpus/fineweb2_kaz_Cyrl.txt
+model:
+  name: ../../models/mbert-kk-10k  # local directory: identified by its content fingerprint
+  max_len: 128
+chunker:
+  name: bert-base-multilingual-cased
+  revision: "3f076fdb1ab68d5b2880cb87a0886f315b8146f8"
+  max_len: 128
+masking: {probability: 0.15, mask_share: 0.8, random_share: 0.1}
+training:
+  learning_rate: 5.0e-5
+  epochs: 1
+  train_batch_size: 8
+  grad_accumulation: 4
+  weight_decay: 0.01
+  warmup: 0.05
+  fp16: auto
+  logging_steps: 100
+  save_steps: 2000
+seed: 42
+output_root: ../../models
