@@ -34,11 +34,16 @@ fragmentation of the input and keeps everything else equal.
 - **Vocabulary.** N = 10,000, chosen on KazNERD validation and corpus statistics
   (`docs/vocabulary.md`). Validation pieces per word fall from 2.32 to 1.35, the `[UNK]`
   share is unchanged (0.788%), and 9,998 of the new pieces occur at least 100 times in the
-  corpus. The SHA-256 of `new_pieces.txt` is recorded in section 6 when the extension is
-  built.
+  corpus. The extension was built on 2026-10-27 (`extension.json`, section 6). Its learning
+  run found 52,104 candidates, against 52,108 in the size report, because the WordPiece
+  trainer breaks ties in hash order. The validation statistics of the top 10,000 were
+  identical to the report's, and `new_pieces.txt` is the authoritative list.
 - **Continued pre-training (#36).**
   - Corpus: FineWeb-2 `kaz_Cyrl`, 20,000,040 words, SHA-256 `9ab7b0c5…74b0a`; lines that
-    contain a KazNERD sentence were removed (#34).
+    contain a KazNERD sentence were removed (#34). Like much Kazakh web text, the corpus
+    contains gambling spam: 1.0% of its lines mention "казино", and the piece `казино` is the
+    4th most frequent of the 10,000 new pieces. Both arms see exactly the same text, so this
+    does not bias the comparison. It is reported as a property of the corpus.
   - Both arms get identical word chunks (cut by original mBERT, 126 pieces), identical
     whole-word masks (15%, 80/10/10), the same steps and the same batch order.
   - Settings: lr 5e-5, 1 epoch, batch 8 × 4, 5% linear warm-up, weight decay 0.01, seed 42.
@@ -97,7 +102,10 @@ specificity subset 0.877 and 0.849; on seen entities 0.967 and 0.945.
   the primary gain would point to a general improvement rather than one specific to
   fragmentation; this is discussed, not tested.
 - **Manipulation check (descriptive).** Mean pieces per word of the primary subset under each
-  tokenizer, before any NER run.
+  tokenizer, before any NER run: **4.27 → 2.81 (−34%)**. The drop is smaller than for all
+  fragmented validation entity words (4.52 → 2.45, −46%) because unseen names are rarer than
+  the corpus pieces cover. The manipulation is therefore real but partial, which limits the
+  effect that can be expected.
 - **Secondary (descriptive).** Test F1 on all words (`test_contract`, mean ± sd per arm and
   method); the B2 odds ratio per extra piece in each arm (`kazner fragmentation`, reference
   tokenizer original mBERT); recall on the 168 entities with `[UNK]`.
@@ -128,8 +136,8 @@ runs before any arm result is analysed; its commit is recorded in section 6.
 | Item | Value |
 |---|---|
 | Full fine-tuning learning rate (from #32) | 5e-5 (runs `268e26c874ea`, `ae02c9729dd2`) |
-| `models/mbert-kk-10k/new_pieces.txt` SHA-256 | ___ |
-| Manipulation check: pieces per word, primary subset, A → B | ___ → ___ |
+| `models/mbert-kk-10k/new_pieces.txt` SHA-256 | `6940c9a9888dd353627c61acad6893e32252b0f2f86216c745ba66a87ff7f9ae` |
+| Manipulation check: pieces per word, primary subset, A → B | 4.27 → 2.81 |
 | Comparison code commit | ___ |
 | Freeze commit (`prereg-37`) | ___ |
 
