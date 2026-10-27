@@ -463,3 +463,25 @@ words.
   Modern Standby has already paused long runs. Pilots use `--max-chunks`.
 - A model directory produced here is a local model for #31: its run ID uses the content
   fingerprint, and it can be passed directly to `kazner train`. A smoke test does exactly that.
+
+## 2026-10-27 — Testing the analysis before the experiment exists
+
+**Problem.** The causal test is analysed with a procedure fixed in advance
+(`docs/preregistration-vocab.md`). A bug or an anti-conservative test found only after the arm
+results are in could no longer be fixed without the fix looking like a reaction to the
+results.
+
+**Decisions.**
+- The comparison (`kazner compare`) was written and tested before any arm exists, and its
+  commit is recorded in the preregistration. Unit tests use a hand-computed table,
+  identical arms (Δ = 0, p = 1), a clear effect (the smallest possible p, Holm-corrected) and
+  Holm's procedure by hand.
+- It was then dry-run on the existing B2 runs. LoRA against full fine-tuning is a real
+  difference, and it is found (primary Δ +0.033, p = 0.0002). Because full fine-tuning is
+  better on every subset, the difference-in-differences correctly does not call the gain
+  specific to fragmentation. In six seed-vs-seed comparisons of the same model there were no
+  false positives (every p > 0.17).
+- The bootstrap resamples test sentences, not model seeds. The arms average three
+  fine-tuning seeds but have one continued pre-training run each. The seed-vs-seed checks
+  show that this does not make the test anti-conservative at the scale of the planned
+  comparison; pre-training seed variance remains a limitation, listed in the preregistration.

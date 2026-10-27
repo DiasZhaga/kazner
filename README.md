@@ -352,6 +352,22 @@ slightly. `--pieces new_pieces.txt` therefore rebuilds a saved extension exactly
 directory, the extension is identified by its content fingerprint in run IDs (#31).
 Size report and the proposed N: [docs/vocabulary.md](docs/vocabulary.md).
 
+## Comparing two arms (#37)
+
+```bash
+kazner compare --entities results/37/entities.csv --out results/37/comparison.json   --pair full <A runs> <B runs> --pair lora <A runs> <B runs>
+```
+
+`kazner compare` (`kazner.compare`) runs the preregistered analysis of the causal test
+(`docs/preregistration-vocab.md`). The input is the `entities.csv` of `kazner fragmentation`,
+with fixed entity subsets and one hit column per run. For each pair of arms and each subset
+(primary: unseen with more than 3 pieces per word; specificity: unseen with at most 2;
+negative control: seen; `[UNK]` entities apart), it reports the difference in exact-span
+recall, arm B minus arm A with each arm averaged over its seeds. The difference gets a 95% CI
+and a two-sided p-value from a paired bootstrap over test sentences. The difference-in-
+differences (primary − specificity) is bootstrapped jointly, and the primary tests of all
+pairs are Holm-corrected.
+
 ## Continued pre-training
 
 ```bash
@@ -452,13 +468,14 @@ src/kazner/
   corpus.py        unlabeled Kazakh corpus: line rules, KazNERD removal, seeded sample
   vocab.py         kazner extend-vocab: WordPiece vocabulary extension with FVT
   pretrain.py      kazner pretrain: continued masked-LM training with shared chunks and masks
+  compare.py       kazner compare: paired bootstrap comparison of two arms (#37)
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
   fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
   cli.py           kazner evaluate | fertility | train | aggregate | fragmentation |
-                   extend-vocab | pretrain
+                   extend-vocab | pretrain | compare
 scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles

@@ -117,8 +117,28 @@ specificity subset 0.877 and 0.849; on seen entities 0.967 and 0.945.
   the model noise but not the noise from the test sample. A null result is reported as such,
   together with the interval: effects smaller than about 2 points cannot be ruled out.
 
-The comparison command (paired bootstrap on `entities.csv`) is written and tested on existing
-runs before any arm result is analysed; its commit is recorded in section 6.
+**Analysis code.** `kazner fragmentation` (#33) produces `entities.csv` with the subsets and
+one hit column per run. `kazner compare` then runs the analysis above:
+
+```bash
+kazner compare --entities results/37/entities.csv --out results/37/comparison.json   --pair full <A full runs> <B full runs> --pair lora <A LoRA runs> <B LoRA runs>
+```
+
+It was written and tested before any arm exists; its commit is recorded in section 6. A dry
+run on the existing mBERT runs of B2, 10,000 replicates each, checked that it behaves as
+intended:
+
+- **A real difference is found.** Comparing LoRA (as A) with full fine-tuning (as B), the
+  primary Δ is +0.033 [+0.020, +0.045] (p = 0.0002, Holm p = 0.0002). Full fine-tuning is
+  better on every subset (specificity Δ +0.028, seen Δ +0.021), so the DiD is +0.005
+  [−0.011, +0.020] and H2 is correctly *not* supported: the gain is general, not specific to
+  fragmentation.
+- **No false positives between seeds of one model.** In the six seed-vs-seed comparisons
+  (3 per method, one run per arm), the primary Δ ranges from −0.011 to +0.001, every p is
+  above 0.17, and none is significant. The CI half-width with one run per arm is about 0.016.
+  The bootstrap resamples test sentences only, not model seeds. These null comparisons show
+  that seed-to-seed differences lie within its intervals.
+- Run time: about 4 s for 10,000 replicates.
 
 ## 5. Stopping rules and exclusions
 
@@ -138,7 +158,7 @@ runs before any arm result is analysed; its commit is recorded in section 6.
 | Full fine-tuning learning rate (from #32) | 5e-5 (runs `268e26c874ea`, `ae02c9729dd2`) |
 | `models/mbert-kk-10k/new_pieces.txt` SHA-256 | `6940c9a9888dd353627c61acad6893e32252b0f2f86216c745ba66a87ff7f9ae` |
 | Manipulation check: pieces per word, primary subset, A → B | 4.27 → 2.81 |
-| Comparison code commit | ___ |
+| Comparison code commit | `59abfe2` (`kazner compare`), tests `7a4a0ca` |
 | Freeze commit (`prereg-37`) | ___ |
 
 ## 7. Deviations
