@@ -126,10 +126,61 @@ KazRoBERTa at 2e-4 trained normally but reached a lower validation F1 (0.8947) t
 
 **Selected rates:** mBERT 5e-5, XLM-R base 3e-5, KazRoBERTa 1e-4.
 
-### Still to run
+### Three seeds at the selected rates
 
-The remaining runs use the screen's code tree (a worktree at `a7ec27d`), so the whole series
-shares one code version, and seed 42 of `xlmr_best.yaml` reuses the screen run:
+The extension runs and seeds 43–44 ran on the screen's code tree (a worktree at `a7ec27d`), so
+all runs of #32 share one code version (`44db383`). Seed 42 of each `*_best.yaml` is the
+screen run. Test metric: `test_contract`, mean ± sample sd over seeds 42, 43, 44.
 
-1. Grid extension at seed 42: mBERT 1e-4, KazRoBERTa 2e-4.
-2. Seeds 43 and 44 at each selected rate (`<model>_best.yaml`; XLM-R: 3e-5).
+| Model | lr | Test F1 | Precision | Recall | Runs (seeds 42, 43, 44) |
+|---|---|---|---|---|---|
+| mBERT | 5e-5 | 0.8994 ± 0.0027 | 0.8902 ± 0.0034 | 0.9089 ± 0.0022 | `268e26c874ea`, `f56bf59907b4`, `9eb5a5465396` |
+| XLM-R base | 3e-5 | **0.9093 ± 0.0007** | 0.8992 ± 0.0009 | 0.9195 ± 0.0016 | `595d27dab710`, `cf7766617b2a`, `24e58bec57d8` |
+| KazRoBERTa | 1e-4 | **0.9089 ± 0.0013** | 0.8973 ± 0.0023 | 0.9208 ± 0.0008 | `0ec53f106e14`, `a2eed7ada3ff`, `c7518a30999b` |
+
+- mBERT's seeds 43 and 44 give exactly the test F1 of experiment B (0.8996 and 0.8967): the
+  current code with a pinned commit computes the same thing as two weeks earlier.
+- XLM-R base and KazRoBERTa are about 1 F1 point above mBERT, which is clearly more than the
+  seed spread. They are tied with each other, although KazRoBERTa has 30% of XLM-R's
+  parameters and half of its layers.
+- All nine runs peaked at the last of their 3 epochs. The comparison is at an equal training
+  budget.
+- **Not causal evidence.** The models differ in pre-training data, size, depth and
+  vocabulary. KazRoBERTa's pre-training news may overlap with KazNERD (see *Possible
+  overlap* above).
+
+### Fragmentation analysis per model
+
+`kazner fragmentation` on the nine runs, grouped by model. The reference tokenizer is
+original mBERT at `3f076fd` for every model, so "pieces per word" always means mBERT pieces.
+The table gives exact-span recall, mean over 3 seeds.
+
+| | Seen: 1.0 | (1,2] | (2,3] | >3 | Unseen: 1.0 | (1,2] | (2,3] | >3 |
+|---|---|---|---|---|---|---|---|---|
+| n | 1,913 | 1,848 | 1,767 | 1,678 | 360 | 2,365 | 2,079 | 1,498 |
+| mBERT | 0.966 | 0.966 | 0.965 | 0.969 | 0.862 | 0.879 | 0.836 | 0.793 |
+| XLM-R base | 0.964 | 0.971 | 0.969 | 0.968 | 0.862 | 0.890 | 0.861 | 0.828 |
+| KazRoBERTa | 0.971 | 0.980 | 0.981 | 0.988 | 0.854 | 0.887 | 0.846 | 0.811 |
+
+Odds ratio of an entity-word error per extra mBERT piece, with frequency, length, B/I and type
+controlled: mBERT 1.006 [0.967, 1.043], XLM-R 0.969 [0.925, 1.011], KazRoBERTa 0.979
+[0.938, 1.020]. No full-fine-tuning model shows an independent effect.
+
+**Reading.**
+- **Entities that mBERT fragments strongly are hard for every model**, including models whose
+  own tokenizers split them far less (XLM-R 1.77, KazRoBERTa 1.21 pieces per word). Unseen
+  recall falls from (1,2] to >3 by 6.2 points for XLM-R, 7.6 for KazRoBERTa and 8.6 for
+  mBERT. Most of the drop therefore belongs to the entities themselves: they are long, rare
+  and morphologically complex.
+- **The part that could be mBERT-specific is small.** Relative to mBERT, XLM-R gains 3.5
+  points on unseen >3 entities but only 1.1 on unseen (1,2], a difference of about 2.4
+  points; KazRoBERTa's difference is about 1.0 point. Both are upper bounds for a pure
+  tokenization effect, because the models differ in everything else too.
+- **Consequence for the causal test (#37).** An effect of roughly 1–2 recall points on the
+  primary subset is a realistic expectation, and the manipulation there is partial (4.27 →
+  2.81 pieces per word). With three fine-tuning seeds per arm, the preregistration estimates
+  the minimum detectable effect at about 2.3 points, so the test may be underpowered. More
+  seeds per arm lower the model noise, which dominates the seed-to-seed differences.
+- KazRoBERTa is the best model on **seen** entities, including fragmented ones (0.988 at >3).
+  This is consistent with strong memorisation of frequent Kazakh word forms. Its pre-training
+  overlap with KazNERD (see above) is an alternative explanation.
