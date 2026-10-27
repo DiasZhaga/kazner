@@ -112,12 +112,19 @@ only; the test column is shown for completeness.
 | Model | lr | Validation F1 | Test F1 | Run |
 |---|---|---|---|---|
 | mBERT | 1e-4 | 0.0130 | 0.0134 | `ae02c9729dd2` |
+| KazRoBERTa | 2e-4 | 0.8947 | 0.8925 | `2fcd1244acfe` |
 
 mBERT diverged at 1e-4: validation F1 was 0.0007, 0.013 and 0.004 after the three epochs, so
 the model stopped predicting entities. Full fine-tuning of BERT without warm-up at batch 8
 does not tolerate this rate. The selected rate for mBERT is therefore **5e-5**: the step above
 it is clearly worse (`configs/baselines/mbert_best.yaml`). The collapsed run is kept and
 reported, as the protocol requires.
+
+KazRoBERTa at 2e-4 trained normally but reached a lower validation F1 (0.8947) than at 1e-4
+(0.9115), so **1e-4** is selected and now lies inside the extended grid
+(`configs/baselines/kazroberta_best.yaml`).
+
+**Selected rates:** mBERT 5e-5, XLM-R base 3e-5, KazRoBERTa 1e-4.
 
 ### Still to run
 
