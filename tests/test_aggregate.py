@@ -80,7 +80,8 @@ def test_csv_and_table(runs, tmp_path):
     with pytest.warns(UserWarning):
         rows = aggregate(load_runs(runs), ["method"])
     path = write_csv(tmp_path / "out" / "summary.csv", rows)
-    saved = list(csv.DictReader(path.open(encoding="utf-8")))
+    with path.open(encoding="utf-8") as f:
+        saved = list(csv.DictReader(f))
     assert [r["method"] for r in saved] == ["full", "lora"]
     assert saved[1]["f1_sd"] == ""  # n = 1 written as an empty cell
     table = format_table(rows, ["method"])
