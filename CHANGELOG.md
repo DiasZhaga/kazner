@@ -71,6 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would have fetched about three times the ~1.85 MiB of text per row group. The files are now
   opened with `cache_type="none"`; `kazner.corpus.CountingReader` records the bytes read, and the
   manifest stores them as `bytes_read` (#42).
+- Continued pre-training logged, and back-propagated, the sum instead of the mean of the
+  micro-batch losses under gradient accumulation (4 times the loss in the #37 configs).
+  transformers 5.0.0 does not divide by the accumulation steps for models whose `forward` takes
+  `**kwargs`, and BERT ignores the `num_items_in_batch` it is given instead. `kazner pretrain`
+  now sets `model.accepts_loss_kwargs = False`. NER training keeps the old behaviour (logged
+  training loss twice the mean) so that earlier runs stay reproducible; see
+  `docs/challenges.md` (#49).
 
 ## [0.1.0] - 2026-10-07
 
