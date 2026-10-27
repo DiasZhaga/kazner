@@ -1,0 +1,137 @@
+# Preregistration: does less fragmentation improve Kazakh NER? (#37)
+
+**Status: DRAFT, 2026-10-27.** This document becomes binding when it is merged into `main` and
+the merge commit is tagged `prereg-37`. That must happen before the first run of #37 (the
+continued pre-training of either arm included). Later changes are deviations: they are listed
+in section 7 with a reason and reported in the paper.
+
+## 1. Question and hypotheses
+
+Experiment B2 (`docs/fragmentation.md`) found, observationally, that mBERT recognises unseen
+test entities worse when their words are split into many pieces. Recall is about 0.79 for more
+than 3 pieces per word, against about 0.88 for at most 2. Rarity and length were not
+controlled within unseen entities, so the cause is open. This experiment changes only the
+fragmentation of the input and keeps everything else equal.
+
+- **H1 (primary).** Adding 10,000 Kazakh WordPiece pieces to mBERT's vocabulary (#35) and
+  continuing masked-LM pre-training raises exact-span recall on *unseen, strongly fragmented*
+  test entities. The comparison is with mBERT continued on the same text, in the same way,
+  with its original vocabulary. H1 is tested separately for full fine-tuning and for LoRA.
+  B2 predicts a larger effect for LoRA, which showed an independent effect of fragmentation,
+  than for full fine-tuning, which did not.
+- **H2 (specificity).** The gain on the primary subset is larger than the gain on unseen,
+  weakly fragmented entities.
+- **Negative control.** No meaningful gain is expected on entities seen in training.
+
+## 2. Design
+
+| | Arm A: original vocabulary | Arm B: extended vocabulary |
+|---|---|---|
+| Start model | mBERT `bert-base-multilingual-cased` at `3f076fd` | the same, plus 10,000 pieces (`models/mbert-kk-10k`, `new_pieces.txt`) with FVT initialisation |
+| Continued pre-training | `configs/pretrain/mbert_kk_original.yaml` | `configs/pretrain/mbert_kk_ext10k.yaml` |
+| NER fine-tuning | as below | as below |
+
+- **Vocabulary.** N = 10,000, chosen on KazNERD validation and corpus statistics
+  (`docs/vocabulary.md`). Validation pieces per word fall from 2.32 to 1.35, the `[UNK]`
+  share is unchanged (0.788%), and 9,998 of the new pieces occur at least 100 times in the
+  corpus. The SHA-256 of `new_pieces.txt` is recorded in section 6 when the extension is
+  built.
+- **Continued pre-training (#36).**
+  - Corpus: FineWeb-2 `kaz_Cyrl`, 20,000,040 words, SHA-256 `9ab7b0c5…74b0a`; lines that
+    contain a KazNERD sentence were removed (#34).
+  - Both arms get identical word chunks (cut by original mBERT, 126 pieces), identical
+    whole-word masks (15%, 80/10/10), the same steps and the same batch order.
+  - Settings: lr 5e-5, 1 epoch, batch 8 × 4, 5% linear warm-up, weight decay 0.01, seed 42.
+    One pre-training run per arm; with more GPU time, seeds 43 and 44 are added for both arms
+    and analysed in the same way (section 4).
+- **NER fine-tuning (same for both arms; no tuning on the arms).**
+  - 10% of KazNERD train (subsample seed 42), 3 epochs, max_len 128, batch 4 × 2, weight
+    decay 0.01, FP16, best epoch by validation F1. Seeds 42, 43, 44.
+  - Full fine-tuning at the learning rate selected for mBERT in #32 by validation F1. It is
+    filled in here before the freeze: **lr = ___**.
+  - LoRA: lr 1e-3, r 16, α 32, dropout 0.1, target modules query and value (the best LoRA
+    setting of experiment C).
+- **Reference (not part of the tests).** The existing mBERT runs without continued
+  pre-training: full fine-tuning seeds 42–44 and LoRA seeds 42–44 (B2).
+- **Hardware.** All runs of one comparison run on the same machine.
+
+That makes 2 pre-training runs and 12 NER runs (2 arms × 2 methods × 3 seeds).
+
+## 3. Fixed entity subsets
+
+The subsets are defined from the test gold labels, the 10% training subsample (seed 42) and
+the original mBERT tokenizer (`3f076fd`) only, with `kazner fragmentation`. They do not depend
+on any model's predictions. A KazNERD test entity is *seen* if the same surface string with the
+same type is an entity in the training subsample. "Pieces per word" is the mean number of
+original-mBERT pieces over the entity's words.
+
+| Subset | Definition | n |
+|---|---|---|
+| **Primary** | unseen, more than 3 pieces per word, no `[UNK]` word | **1,490** |
+| Specificity comparison | unseen, at most 2 pieces per word, no `[UNK]` word | 2,605 |
+| Negative control | seen, no `[UNK]` word | 7,177 |
+| Reported separately | unseen with an `[UNK]` word | 168 |
+
+The `[UNK]` exclusion keeps the comparison on fragmentation alone. The extended tokenizer marks
+exactly the same words as `[UNK]` as mBERT (#35), but entities with `[UNK]` are a different
+kind of hard case.
+
+Reference values from mBERT without continued pre-training (B2 runs, mean ± sd over 3 seeds):
+recall on the primary subset 0.792 ± 0.006 (full) and 0.759 ± 0.001 (LoRA); on the
+specificity subset 0.877 and 0.849; on seen entities 0.967 and 0.945.
+
+## 4. Outcomes and analysis
+
+- **Primary outcome.** Δ = recall(B) − recall(A) on the primary subset, where each arm's
+  recall is the mean over its three fine-tuning seeds. It is computed per method.
+- **Inference.** A paired bootstrap over test sentences: 10,000 replicates, generator seed 0.
+  Each replicate resamples sentences once and recomputes both arms' seed-mean recall on the
+  entities of the resampled sentences. The two-sided 95% percentile CI of Δ is reported. Two
+  primary tests are run (full fine-tuning, LoRA); their p-values (bootstrap, two-sided) are
+  Holm-corrected at α = 0.05. **H1 is supported for a method** if Δ > 0 and its corrected
+  test rejects Δ = 0.
+- **H2.** DiD = Δ(primary) − Δ(specificity subset), with the same bootstrap. It is supported
+  if the 95% CI excludes 0 and DiD > 0.
+- **Negative control.** Δ on seen entities, with a 95% CI. A gain on seen entities as large as
+  the primary gain would point to a general improvement rather than one specific to
+  fragmentation; this is discussed, not tested.
+- **Manipulation check (descriptive).** Mean pieces per word of the primary subset under each
+  tokenizer, before any NER run.
+- **Secondary (descriptive).** Test F1 on all words (`test_contract`, mean ± sd per arm and
+  method); the B2 odds ratio per extra piece in each arm (`kazner fragmentation`, reference
+  tokenizer original mBERT); recall on the 168 entities with `[UNK]`.
+- **With more pre-training seeds.** The arm's recall is the mean over all its (pre-training ×
+  fine-tuning) runs. The bootstrap is unchanged.
+- **Sensitivity and power.** On the primary subset, two seeds of the same mBERT model differ
+  with a standard error of 0.008 (bootstrap over sentences), so the minimum detectable effect
+  is about 2.3 recall points (80% power, two-sided 5%). Averaging three seeds per arm lowers
+  the model noise but not the noise from the test sample. A null result is reported as such,
+  together with the interval: effects smaller than about 2 points cannot be ruled out.
+
+The comparison command (paired bootstrap on `entities.csv`) is written and tested on existing
+runs before any arm result is analysed; its commit is recorded in section 6.
+
+## 5. Stopping rules and exclusions
+
+- All 2 pre-training runs and 12 NER runs are completed before any arm's test results are
+  looked at. Validation metrics may be watched to catch failures.
+- A run that crashes is restarted with the same config, so it gets the same run ID and resumes.
+  A run that finishes but performs badly is kept and reported; no run is dropped for its
+  result.
+- No hyperparameter is changed after an arm's validation or test results have been seen.
+- Fine-tuning collapse (validation F1 < 0.5) is reported. If it happens in one arm only, the
+  primary analysis is still run on all seeds, and the collapse is discussed.
+
+## 6. Records filled in at freeze time
+
+| Item | Value |
+|---|---|
+| Full fine-tuning learning rate (from #32) | ___ |
+| `models/mbert-kk-10k/new_pieces.txt` SHA-256 | ___ |
+| Manipulation check: pieces per word, primary subset, A → B | ___ → ___ |
+| Comparison code commit | ___ |
+| Freeze commit (`prereg-37`) | ___ |
+
+## 7. Deviations
+
+None so far.
