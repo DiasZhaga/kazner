@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[UNK]`, used; ranked by use), appended to the WordPiece vocabulary with every old id kept,
   FVT initialisation of embeddings and masked-LM bias, a per-size report on KazNERD validation
   and on the corpus, `--pieces` to rebuild a saved extension exactly (#35).
+- Continued masked-LM pre-training `kazner pretrain` (`kazner.pretrain`): corpus chunks cut by
+  a fixed reference tokenizer, whole-word masks seeded per chunk and shared by every vocabulary,
+  run IDs from config, code, corpus SHA-256 and model fingerprint, resumable runs that write a
+  model directory usable as `model.name`; configs for the two arms of the causal test in
+  `configs/pretrain/` (#36).
 - Baselines next to mBERT: learning-rate screen configs for mBERT, XLM-R base and KazRoBERTa
   with pinned model commits (`configs/baselines/`), protocol in `docs/baselines.md`; a test
   that every shipped config loads and validates (#32).

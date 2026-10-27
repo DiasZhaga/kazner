@@ -352,6 +352,36 @@ slightly. `--pieces new_pieces.txt` therefore rebuilds a saved extension exactly
 directory, the extension is identified by its content fingerprint in run IDs (#31).
 Size report and the proposed N: [docs/vocabulary.md](docs/vocabulary.md).
 
+## Continued pre-training
+
+```bash
+kazner pretrain --config configs/pretrain/mbert_kk_original.yaml --max-chunks 2000  # pilot
+kazner pretrain --config configs/pretrain/mbert_kk_original.yaml    # control arm
+kazner pretrain --config configs/pretrain/mbert_kk_ext10k.yaml      # extended vocabulary (#35)
+```
+
+`kazner pretrain` (`kazner.pretrain`) continues masked-LM training of a model on the unlabeled
+corpus. It is built for the causal test (#37), in which two models with different
+vocabularies must be trained identically:
+
+- **Same text, same order.** The corpus is cut into chunks of consecutive words that fit
+  `chunker.max_len - 2` pieces under a fixed reference tokenizer (original mBERT), whatever
+  model is trained. Both arms get the same chunks, the same number of steps and, with the
+  same seed, the same batch order.
+- **Same masks.** Whole-word masking: in every chunk the same 15% of words are selected in
+  both arms, with the same per-word choice of `[MASK]` (80%), random token (10%) or unchanged
+  (10%), drawn from a generator seeded by (seed, chunk index). All pieces of a selected word
+  are predicted. Only the random replacement token depends on the vocabulary.
+- **Identity and restarts.** A run writes a complete model directory to
+  `<output_root>/<run_id>/`, usable as `model.name` in an experiment config. The run ID hashes
+  the config, the code, the corpus SHA-256 and the content fingerprint of a local model. The
+  directory also holds `pretrain_config.json`, `environment.json` and, written last,
+  `pretrain_metrics.json` (loss history, steps, chunk and token counts). A complete run is
+  skipped. An interrupted run resumes from its last checkpoint (`training.save_steps`).
+
+`--max-chunks N` limits a run to its first N chunks, for pilots and throughput measurements;
+it changes the run ID.
+
 ## Fragmentation and errors
 
 ```bash
@@ -421,13 +451,14 @@ src/kazner/
   fertility.py     tokenizer fertility analysis
   corpus.py        unlabeled Kazakh corpus: line rules, KazNERD removal, seeded sample
   vocab.py         kazner extend-vocab: WordPiece vocabulary extension with FVT
+  pretrain.py      kazner pretrain: continued masked-LM training with shared chunks and masks
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
   fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
   cli.py           kazner evaluate | fertility | train | aggregate | fragmentation |
-                   extend-vocab
+                   extend-vocab | pretrain
 scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
