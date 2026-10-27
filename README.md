@@ -307,7 +307,9 @@ resumes where it stopped, and `--force` re-runs them. The run ID hashes a finger
 data *content* rather than its path, so the same experiment reached through two configs
 (e.g. `peft_10pct_full.yaml` seed 42 and `pilot_full_10pct.yaml`) is trained only once.
 Model selection (e.g. the LoRA screen in `configs/lora_sweep/`) uses `validation_best`, never
-the test set.
+the test set. Baseline encoders (XLM-R base, KazRoBERTa) next to mBERT, with pinned model
+commits and the same learning-rate screen for all three: [docs/baselines.md](docs/baselines.md)
+(`configs/baselines/`).
 
 ## Aggregation across seeds
 
@@ -429,8 +431,8 @@ src/kazner/
 scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
-docs/              technology-choices.md, traceability.md, reproduction.md, fragmentation.md,
-                   challenges.md
+docs/              technology-choices.md, traceability.md, reproduction.md, baselines.md,
+                   fragmentation.md, vocabulary.md, challenges.md
 .github/workflows/ ci.yml, release.yml
 ```
 
@@ -439,6 +441,7 @@ Documentation:
 - [technology choices](docs/technology-choices.md): every tool against the Lecture 5 criteria;
 - [requirements traceability](docs/traceability.md);
 - [reproduction](docs/reproduction.md);
+- [baselines: XLM-R and KazRoBERTa](docs/baselines.md);
 - [fragmentation and errors (B2)](docs/fragmentation.md);
 - [vocabulary extension: size report](docs/vocabulary.md);
 - [decisions and problems log](docs/challenges.md);

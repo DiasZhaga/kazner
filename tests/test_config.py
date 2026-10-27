@@ -54,6 +54,15 @@ def test_pilot_config_reproduces_the_pilot_settings():
     assert c.resolve(c.data.dir) == (ROOT / "data" / "kaznerd").resolve()
 
 
+@pytest.mark.parametrize("path", sorted((ROOT / "configs").rglob("*.yaml")), ids=lambda p: p.stem)
+def test_every_shipped_config_is_valid(path):
+    c = load_config(path)
+    assert c.resolve(c.data.dir) == (ROOT / "data" / "kaznerd").resolve()
+    if path.parent.name == "baselines":  # reported results: model commit pinned
+        assert len(c.model.revision) == 40
+        assert c.model.add_prefix_space is ("roberta-conversational" in c.model.name or None)
+
+
 def test_yaml_scientific_notation_without_dot_is_a_number(tmp_path):
     """PyYAML reads `5e-5` as a string; the loader must still accept it as a float."""
     path = tmp_path / "c.yaml"
