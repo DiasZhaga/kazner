@@ -46,7 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `configs/pretrain/` (#36).
 - Baselines next to mBERT: learning-rate screen configs for mBERT, XLM-R base and KazRoBERTa
   with pinned model commits (`configs/baselines/`), protocol in `docs/baselines.md`; a test
-  that every shipped config loads and validates (#32).
+  that every shipped config loads and validates; grid extensions and three-seed configs at the
+  selected rates (mBERT 5e-5, XLM-R 3e-5, KazRoBERTa 1e-4) and the results: test F1
+  0.8994 ± 0.0027, 0.9093 ± 0.0007 and 0.9089 ± 0.0013, with a per-model fragmentation
+  analysis (#32).
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
