@@ -72,4 +72,45 @@ parameters to update), KazRoBERTa roughly half (6 layers, about half the tokens)
 
 ## Results
 
-Pending.
+### Learning-rate screen (seed 42)
+
+All 12 runs completed on code tree `44db383` (commit `a7ec27d`). Selection uses validation F1
+only; the test column is shown for completeness.
+
+| Model | lr | Validation F1 | Test F1 | Run |
+|---|---|---|---|---|
+| mBERT | 1e-5 | 0.8612 | 0.8612 | `f111c4c893de` |
+| mBERT | 2e-5 | 0.8901 | 0.8902 | `3de8e7c6ab14` |
+| mBERT | 3e-5 | 0.8942 | 0.8959 | `199ca7f67789` |
+| mBERT | **5e-5** | **0.9012** | 0.9020 | `268e26c874ea` |
+| XLM-R base | 1e-5 | 0.8444 | 0.8399 | `296c02e7fe65` |
+| XLM-R base | 2e-5 | 0.8987 | 0.8955 | `7da0fdf64f2d` |
+| XLM-R base | **3e-5** | **0.9096** | 0.9085 | `595d27dab710` |
+| XLM-R base | 5e-5 | 0.9091 | 0.9090 | `2eddccf7d232` |
+| KazRoBERTa | 2e-5 | 0.8844 | 0.8898 | `0a5cd4604099` |
+| KazRoBERTa | 3e-5 | 0.8996 | 0.9018 | `f09fc95dcd86` |
+| KazRoBERTa | 5e-5 | 0.9105 | 0.9082 | `61c660ea37a2` |
+| KazRoBERTa | **1e-4** | **0.9115** | 0.9088 | `0ec53f106e14` |
+
+- **Regression check passed.** mBERT at 5e-5, with the current code and a pinned commit,
+  reproduces the pilot run `53a89e2dbc4c` bit for bit: test F1 0.9020369284876905, and the
+  same precision, recall, accuracy and loss.
+- **Selection rule.** XLM-R's best rate, 3e-5, lies inside its grid and is selected. For mBERT
+  (5e-5) and KazRoBERTa (1e-4) the best rate is the top of the grid, so each grid is extended
+  by one step (mBERT 1e-4, KazRoBERTa 2e-4) before choosing:
+  `configs/baselines/mbert_lr1e-4.yaml`, `kazroberta_lr2e-4.yaml`.
+- **Every run peaked at its last epoch.** The best validation epoch is 3 of 3 in all 12 runs, so
+  the comparison is one of equal training budget: all models were still improving when
+  training stopped.
+- **Run times are not comparable.** The laptop entered Modern Standby during the series
+  (`docs/challenges.md`), which paused two runs (XLM-R 2e-5, mBERT 3e-5) for hours. The
+  results are unaffected. Peak GPU memory was 5,899 MiB of 6,141 MiB, including about 700 MiB
+  used by the desktop, so XLM-R never spilled into shared memory.
+
+### Still to run
+
+The remaining runs use the screen's code tree (a worktree at `a7ec27d`), so the whole series
+shares one code version, and seed 42 of `xlmr_best.yaml` reuses the screen run:
+
+1. Grid extension at seed 42: mBERT 1e-4, KazRoBERTa 2e-4.
+2. Seeds 43 and 44 at each selected rate (`<model>_best.yaml`; XLM-R: 3e-5).
