@@ -1,0 +1,25 @@
+# Selected rate for XLM-R base (#32): 3e-5, the best validation F1 of the screen, inside the
+# grid. Seeds 42-44; seed 42 has the same run ID as the screen run and is not trained again.
+name: baseline_xlmr_best
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: FacebookAI/xlm-roberta-base
+  revision: "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089"  # pinned Hub commit (#31)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 3.0e-5
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../../runs
