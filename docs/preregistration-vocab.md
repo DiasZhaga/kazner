@@ -47,8 +47,9 @@ fragmentation of the input and keeps everything else equal.
 - **NER fine-tuning (same for both arms; no tuning on the arms).**
   - 10% of KazNERD train (subsample seed 42), 3 epochs, max_len 128, batch 4 × 2, weight
     decay 0.01, FP16, best epoch by validation F1. Seeds 42, 43, 44.
-  - Full fine-tuning at the learning rate selected for mBERT in #32 by validation F1. It is
-    filled in here before the freeze: **lr = ___**.
+  - Full fine-tuning at the learning rate selected for mBERT in #32 by validation F1:
+    **lr = 5e-5**. The screen's best rate, 5e-5, was at the top of its grid; the extension to
+    1e-4 diverged (validation F1 0.013).
   - LoRA: lr 1e-3, r 16, α 32, dropout 0.1, target modules query and value (the best LoRA
     setting of experiment C).
 - **Reference (not part of the tests).** The existing mBERT runs without continued
@@ -126,7 +127,7 @@ runs before any arm result is analysed; its commit is recorded in section 6.
 
 | Item | Value |
 |---|---|
-| Full fine-tuning learning rate (from #32) | ___ |
+| Full fine-tuning learning rate (from #32) | 5e-5 (runs `268e26c874ea`, `ae02c9729dd2`) |
 | `models/mbert-kk-10k/new_pieces.txt` SHA-256 | ___ |
 | Manipulation check: pieces per word, primary subset, A → B | ___ → ___ |
 | Comparison code commit | ___ |
