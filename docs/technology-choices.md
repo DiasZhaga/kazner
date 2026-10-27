@@ -164,6 +164,15 @@ Travis CI (open-source builds now depend on limited credits).
 verifies SHA-256 (NFR1, NFR7). The test fixtures are synthetic. DVC remains an option for
 WP2 and WP3, when derived datasets appear.
 
+**Unlabeled corpus (#34).** The same principle applies: `scripts/download_kk_corpus.py`
+pins FineWeb-2 to a dataset commit and writes a manifest with the SHA-256 of the result.
+The script reads parquet row groups directly with `pyarrow` and `huggingface_hub`'s
+`HfFileSystem`, both already installed with `datasets`, instead of
+`datasets.load_dataset(streaming=True)`. Streaming yields documents in file order, so a
+bounded download would be the first rows of a file. Reading seeded row groups gives a sample
+spread over the corpus while downloading only about 100–300 MB of 6.8 GB, which matters on
+the available connection (≈ 90 KB/s).
+
 ## 11. Design patterns: Factory Method registry; no Singleton
 
 | Option | Fit |

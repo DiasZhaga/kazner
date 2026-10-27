@@ -21,6 +21,7 @@ htmlcov/
 
 # Data, experiment outputs and model weights (never committed)
 /data/
+/models/
 runs/
 results/
 checkpoint-*/

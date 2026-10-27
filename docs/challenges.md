@@ -332,3 +332,108 @@ with an untuned reference and bias the comparison towards them.
 **Practical problem.** Downloading the two checkpoints (1.45 GB) took about 4.5 hours on the
 available connection (≈ 90 KB/s). Corpus downloads for #34 have to be sized and scheduled
 with that in mind: streaming a fixed subsample, not downloading whole parquet shards.
+
+## 2026-10-25 — Moving experiment B2 into the package: regression without scikit-learn
+
+**Problem.** The first B2 analysis was a script in the git-ignored `results/` folder, so the
+analysis behind a paper result was not versioned. It also used scikit-learn's
+`LogisticRegression`, which is not a kazner dependency: it is only installed because seqeval
+needs it.
+
+**Decisions.**
+- The regression is fitted by Newton's method in NumPy (about 15 lines). A test checks it
+  against the closed form: with one binary predictor, the maximum-likelihood odds ratio equals
+  the cross-product ratio of the 2 × 2 table. A ridge of 10⁻⁶ keeps the Hessian invertible
+  when a run makes no error or a category separates the outcome; such a run gets `null`
+  instead of a meaningless odds ratio.
+- Re-running B2 with the package reproduced every table cell exactly but moved the odds ratios
+  by up to 0.002. This was a genuine discrepancy, not noise. The script had stopped at
+  scikit-learn's default tolerance (10⁻⁴). With a tolerance of 10⁻¹⁰, scikit-learn agrees with
+  the package to six decimals (1.010645 vs 1.010646). The B2 conclusions are unchanged.
+- The CI now covers the group's mean over seeds: every bootstrap replicate refits all seeds on
+  the same resampled test sentences. The script bootstrapped seed 42 only.
+- The reference tokenizer is fixed and separate from the runs' models. For the baselines and
+  the vocabulary study, "fragmented" therefore always means fragmented under original mBERT,
+  so every model is scored on the same entity subsets.
+- The training subsample is defined in one place (`kazner.data.training_subsample`), shared by
+  training and the analysis. Word frequencies and "seen" entities therefore come from exactly
+  the sentences a run was trained on.
+
+## 2026-10-25 — A reproducible corpus sample on a slow connection
+
+**Problem.** Continued pre-training (#36) needs about 20 M words of unlabeled Kazakh text.
+The FineWeb-2 `kaz_Cyrl` train split is 6.8 GB of parquet. On the available connection
+(≈ 90 KB/s, measured when the baseline checkpoints were downloaded) that would take about 21
+hours. The obvious bounded alternative, the first N streamed documents, is the head of one
+file, not a sample of the corpus. The split that is small enough to download, FineWeb-2's
+`test`, is explicitly marked "should not be trained on".
+
+**Decisions.**
+- Sample by parquet row groups. All row groups of both train files are put in an order fixed
+  by a seed and read one at a time, text column only, until the cleaned text reaches the
+  target. The download stays proportional to the sample, the sample spreads across the
+  corpus, and the result is reproducible from (revision, seed, target, rules). The manifest
+  lists every row group read.
+- Clean at the line (paragraph) level. FineWeb-2 is deduplicated and language-identified at
+  document level, but boilerplate lines repeat across documents and Kazakh pages contain
+  Russian and English paragraphs. Russian lines would put Russian pieces into the extended
+  vocabulary (#35). A line is therefore kept only if it contains a letter specific to Kazakh.
+  Short Kazakh lines without one are lost; this is accepted and counted.
+- Overlap with KazNERD is checked by containment, not by equality. KazNERD comes from Khabar
+  news transcripts of 2020, and FineWeb-2 crawls run to 2024, so a web paragraph may contain a
+  test sentence. Lines and sentences are compared as case-folded word sequences without
+  punctuation, because KazNERD splits punctuation off (`барды .`). Sentences shorter than six
+  words are not used: they are too generic to be evidence of overlap and would remove ordinary
+  lines.
+- The Hub path was not exercised before the first real download, to respect the decision not
+  to download yet. `--dry-run` reads only the parquet footers (row groups and compressed text
+  size per row group), so access and the expected download size can be checked first.
+
+## 2026-10-25 — Read-ahead would have tripled the corpus download
+
+**Problem.** The metadata-only dry run of the corpus script (#34) showed row groups of 1,000
+documents with about 1.85 MiB of compressed text each. `HfFileSystem` opens files with
+fsspec's default buffering: 5 MiB blocks with `readahead`. Every range read would have fetched
+up to 5 MiB more than requested, so a 20 M-word sample would have cost about 380–580 MiB
+instead of about 120–170 MiB. Without a measurement this would only have shown up as a slow
+download.
+
+**Resolution (#42).** The Hub files are opened with `cache_type="none"`. A thin
+`CountingReader` sits between pyarrow and the file and counts the bytes actually read; the
+manifest records them as `bytes_read`. Tracing pyarrow's reads showed that a row group costs
+exactly one read of its text column chunk, while the footer is read once per file. The test
+now asserts exactly that property, rather than an arbitrary fraction of the file. The dry run
+against the Hub then measured the footers at 12.08 MiB for both files.
+
+## 2026-10-26 — Extending mBERT's vocabulary without changing anything but fragmentation
+
+**Problem.** The causal test (#37) needs an mBERT that fragments Kazakh less and is otherwise
+the same model. Three pitfalls stood in the way.
+- `tokenizer.add_tokens` adds "added tokens", which are matched as raw strings before WordPiece
+  runs. They would cut words in the wrong places and cannot be `##` continuation pieces.
+- A feasibility check showed that the learned pieces also eliminate mBERT's `[UNK]` words
+  (0.79% of KazNERD words). Removing `[UNK]` is a second mechanism that would mix with
+  fragmentation.
+- The `tokenizers` WordPiece trainer is not deterministic. A test that learned candidates
+  twice on the same synthetic corpus got two different orders: ties between equally frequent
+  pairs are broken in hash order.
+
+**Decisions.**
+- New pieces are appended to the WordPiece model's vocabulary itself, keeping every old id. A
+  test checks that an empty extension tokenizes all fixture splits identically, and a network
+  test does the same for the real mBERT tokenizer.
+- Only pieces that mBERT's vocabulary can spell without `[UNK]` are added, and no single
+  characters. The extended tokenizer then marks exactly the same words as `[UNK]`. On KazNERD
+  validation the `[UNK]` share is 0.788% before and after, for every size.
+- New rows are initialised by FVT: the mean embedding, and the mean masked-LM bias, of the
+  pieces that spell the new piece. The decoder stays tied to the embeddings, and a test checks
+  both rows and bias.
+- Candidates are ranked by use on the corpus, with ties broken by the piece. `new_pieces.txt`
+  is authoritative, and `--pieces` rebuilds an extension byte for byte.
+- N is chosen from KazNERD validation and corpus statistics (`docs/vocabulary.md`), never from
+  test data. 10,000 is proposed for the preregistration of #37.
+
+**Practical problem.** The size report took 5 h 12 min of wall-clock time instead of about 15
+minutes. The Windows event log shows 55 minutes of Modern Standby, and the rest apparently ran
+throttled while the display was off. Long CPU jobs get the same keep-awake wrapper as GPU
+series.

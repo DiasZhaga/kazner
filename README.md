@@ -106,6 +106,29 @@ silently.
 redistribute it: `data/` is git-ignored, and the fixtures in `tests/data` are synthetic
 sentences written for the tests. If you use the data, cite [1].
 
+### Unlabeled Kazakh text (vocabulary study, #34)
+
+```bash
+python scripts/download_kk_corpus.py --dry-run          # parquet metadata only: row groups, sizes
+python scripts/download_kk_corpus.py --words 20000000   # -> data/kk_corpus/fineweb2_kaz_Cyrl.txt
+```
+
+The continued pre-training of #36 uses Kazakh web text from FineWeb-2 (`kaz_Cyrl`, ODC-By 1.0),
+pinned to the dataset commit `af9c133`. Only the train split is used: the dataset card says the
+small `test` split should not be trained on. Row groups of the two train files are read in an
+order fixed by `--seed` (default 42) until `--words` words are kept. Only those row groups are
+downloaded, and the sample still spreads over the whole corpus rather than its first rows.
+
+Each paragraph line is NFC-normalised and kept only if it has 5–500 words, is Kazakh (at least
+half of its letters are Cyrillic, and it has a letter specific to Kazakh, which drops Russian
+and English lines), is not an exact duplicate, and contains no KazNERD sentence of six or more
+words (any split; compared without case and punctuation). The rules are in `kazner.corpus`.
+`fineweb2_kaz_Cyrl.manifest.json` records the source, revision, row groups read, rules, the
+count of lines removed by each rule, the KazNERD fingerprint, the SHA-256 of the text and
+`bytes_read`. The Hub files are opened without read-ahead, so every read is an exact range
+request and `bytes_read` is the download. A row group costs only its compressed text, about 1.85
+MiB per 1,000 documents; the footers add 12 MiB once per run. The corpus is never committed.
+
 ## Label alignment
 
 Words are labelled, but models see subwords. `kazner.align` follows the pilot's rule: the
@@ -302,6 +325,48 @@ By default the `test_contract` metrics are used; `--metrics test_trainer` select
 pilot-compatible block. Incomplete runs are skipped with a warning. A group that mixes runs
 from different code versions (different `src/kazner` trees) is flagged.
 
+## Vocabulary extension
+
+```bash
+# report only: pieces per word on KazNERD *validation* for several sizes, use of the new pieces
+kazner extend-vocab --corpus data/kk_corpus/fineweb2_kaz_Cyrl.txt --data data/kaznerd   --revision 3f076fdb1ab68d5b2880cb87a0886f315b8146f8 --out models/report
+# build: extended tokenizer + masked-LM model, old ids kept, new rows initialised by FVT
+kazner extend-vocab ... --size 10000 --out models/mbert-kk-10k
+```
+
+`kazner extend-vocab` (`kazner.vocab`) trains a WordPiece vocabulary on the unlabeled corpus
+with mBERT's own normalizer and pre-tokenizer. It keeps only learned pieces that are new,
+longer than one character, spellable with mBERT's vocabulary without `[UNK]`, and used on the
+corpus, ranked by how often they are used. The first N pieces are appended to the **WordPiece
+vocabulary itself**, so every old id is kept. `tokenizer.add_tokens` is not used: added tokens
+are matched as raw strings before WordPiece and would split words in the wrong places. Because
+no piece needs `[UNK]`, the extended tokenizer marks exactly the same words as `[UNK]` as mBERT,
+and only fragmentation changes. Each new embedding row, and its masked-LM output bias, is
+initialised as the mean of the pieces that spell it (FVT).
+
+The output directory holds the tokenizer, the model, `new_pieces.txt` and `extension.json`
+(base model and revision, corpus SHA-256, KazNERD fingerprint, learner settings and the
+per-size report). N is chosen from the report, never from test data. The WordPiece trainer
+breaks ties between equally frequent pairs in hash order, so a new learning run can differ
+slightly. `--pieces new_pieces.txt` therefore rebuilds a saved extension exactly. As a local
+directory, the extension is identified by its content fingerprint in run IDs (#31).
+Size report and the proposed N: [docs/vocabulary.md](docs/vocabulary.md).
+
+## Fragmentation and errors
+
+```bash
+kazner fragmentation --data data/kaznerd --runs runs/<id> runs/<id> ... --by method --out results/b2
+```
+
+The command relates the test errors of a set of runs to how strongly a fixed reference
+tokenizer (default mBERT) splits each word, with the word's frequency in the training subsample
+as the main confounder. It reports error rates by pieces, raw and within frequency strata,
+exact-span recall by pieces per word for entities seen and unseen in training, and a logistic
+regression (odds ratio per extra piece) with a bootstrap over test sentences. The entity table
+(`entities.csv`) depends only on the data, the training subsample and the reference tokenizer,
+so runs of different models are scored on the same entities. Method and the mBERT results
+(experiment B2): [docs/fragmentation.md](docs/fragmentation.md).
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -354,16 +419,20 @@ src/kazner/
   contract.py      word-level prediction schema, validation, pilot converter
   evaluate.py      seqeval-based evaluator, metrics.json
   fertility.py     tokenizer fertility analysis
+  corpus.py        unlabeled Kazakh corpus: line rules, KazNERD removal, seeded sample
+  vocab.py         kazner extend-vocab: WordPiece vocabulary extension with FVT
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
-  cli.py           kazner evaluate | fertility | train | aggregate
-scripts/           download_kaznerd.py, convert_pilot_predictions.py,
+  fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
+  cli.py           kazner evaluate | fertility | train | aggregate | fragmentation |
+                   extend-vocab
+scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
 docs/              technology-choices.md, traceability.md, reproduction.md, baselines.md,
-                   challenges.md
+                   fragmentation.md, vocabulary.md, challenges.md
 .github/workflows/ ci.yml, release.yml
 ```
 
@@ -373,6 +442,8 @@ Documentation:
 - [requirements traceability](docs/traceability.md);
 - [reproduction](docs/reproduction.md);
 - [baselines: XLM-R and KazRoBERTa](docs/baselines.md);
+- [fragmentation and errors (B2)](docs/fragmentation.md);
+- [vocabulary extension: size report](docs/vocabulary.md);
 - [decisions and problems log](docs/challenges.md);
 - [changelog](CHANGELOG.md).
 

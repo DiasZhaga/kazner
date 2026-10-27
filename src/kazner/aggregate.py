@@ -24,8 +24,10 @@ METRICS = ("precision", "recall", "f1", "accuracy")
 BLOCKS = ("test_contract", "test_trainer")
 
 
-def _get(d: dict[str, Any], dotted: str) -> Any:
-    node: Any = d
+def config_field(config: dict[str, Any], key: str) -> Any:
+    """Value of ``key`` (an alias from :data:`ALIASES` or a dotted path) in ``config.json``."""
+    dotted = ALIASES.get(key, key)
+    node: Any = config
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
             raise KeyError(dotted)
@@ -65,11 +67,10 @@ def aggregate(
     """One row per group of ``by`` values with mean, sd (n > 1) and n for each metric."""
     if block not in BLOCKS:
         raise ValueError(f"unknown metric block {block!r}; choose from {list(BLOCKS)}")
-    paths = [ALIASES.get(key, key) for key in by]
     groups: dict[tuple, list[dict[str, Any]]] = {}
     for run in runs:
         try:
-            key = tuple(_get(run["config"], path) for path in paths)
+            key = tuple(config_field(run["config"], field) for field in by)
         except KeyError as exc:
             raise KeyError(f"run {run['run_id']}: config has no field {exc.args[0]!r}") from None
         groups.setdefault(key, []).append(run)

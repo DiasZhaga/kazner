@@ -12,6 +12,7 @@ from kazner.data import (
     read_splits,
     sample_fraction,
     sample_indices,
+    training_subsample,
 )
 from reference import pilot_data
 
@@ -120,6 +121,14 @@ def test_subsampling_does_not_change_the_mapping():
     # A mapping built from a one-sentence sample would miss labels and shift ids.
     _, one = sample_fraction(tokens, labels, 0.25, seed=0)
     assert build_label2id(one)[0] != full_mapping[0]
+
+
+def test_training_subsample_is_the_sample_cut_to_max_samples():
+    tokens, labels = read_iob2(TINY / "IOB2_train.txt")
+    sample = sample_fraction(tokens, labels, 1.0, 42)
+    assert training_subsample(tokens, labels, 1.0, 42) == sample
+    cut = training_subsample(tokens, labels, 1.0, 42, max_samples=2)
+    assert cut == (sample[0][:2], sample[1][:2])
 
 
 # --- sampling --------------------------------------------------------------------------
