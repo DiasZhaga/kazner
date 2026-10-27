@@ -54,7 +54,12 @@ def test_pilot_config_reproduces_the_pilot_settings():
     assert c.resolve(c.data.dir) == (ROOT / "data" / "kaznerd").resolve()
 
 
-@pytest.mark.parametrize("path", sorted((ROOT / "configs").rglob("*.yaml")), ids=lambda p: p.stem)
+EXPERIMENT_CONFIGS = sorted(
+    p for p in (ROOT / "configs").rglob("*.yaml") if p.parent.name != "pretrain"
+)  # configs/pretrain/ holds pre-training configs, tested in test_pretrain.py
+
+
+@pytest.mark.parametrize("path", EXPERIMENT_CONFIGS, ids=lambda p: p.stem)
 def test_every_shipped_config_is_valid(path):
     c = load_config(path)
     assert c.resolve(c.data.dir) == (ROOT / "data" / "kaznerd").resolve()
