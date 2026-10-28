@@ -184,18 +184,24 @@ def test_shipped_arms_differ_only_in_the_model():
     assert extended.location(extended.model).endswith("mbert-kk-10k")
 
 
-def test_run_pretraining_offline_on_a_tiny_local_model(tiny_tokenizer, tmp_path):
+def save_tiny_bert(tokenizer, path, dropout=0.1):
+    """A randomly initialised one-layer BERT masked-LM with ``tokenizer``, saved to ``path``."""
     torch = pytest.importorskip("torch")
     from transformers import BertConfig, BertForMaskedLM
 
-    model_dir = tmp_path / "tiny"
     torch.manual_seed(0)
     config = BertConfig(
-        vocab_size=len(tiny_tokenizer), hidden_size=16, num_hidden_layers=1,
+        vocab_size=len(tokenizer), hidden_size=16, num_hidden_layers=1,
         num_attention_heads=2, intermediate_size=32, max_position_embeddings=32,
+        hidden_dropout_prob=dropout, attention_probs_dropout_prob=dropout,
     )  # fmt: skip
-    BertForMaskedLM(config).save_pretrained(model_dir)
-    tiny_tokenizer.save_pretrained(model_dir)
+    BertForMaskedLM(config).save_pretrained(path)
+    tokenizer.save_pretrained(path)
+    return path
+
+
+def test_run_pretraining_offline_on_a_tiny_local_model(tiny_tokenizer, tmp_path):
+    save_tiny_bert(tiny_tokenizer, tmp_path / "tiny")
     corpus = tmp_path / "corpus.txt"
     corpus.write_text("\n".join(LINES * 5) + "\n", encoding="utf-8")
     raw = {
@@ -218,3 +224,44 @@ def test_run_pretraining_offline_on_a_tiny_local_model(tiny_tokenizer, tmp_path)
     assert logged[-1].startswith("[skip]")
     forced = p.run_pretraining(config, force=True, log=logged.append)
     assert forced["run_id"] == metrics["run_id"] and logged[-1].startswith("[done]")
+
+
+def test_logged_loss_is_averaged_over_gradient_accumulation(tiny_tokenizer, tmp_path):
+    """transformers 5 does not divide the loss by the accumulation steps when the model's forward
+    takes ``**kwargs``, and BertForMaskedLM ignores ``num_items_in_batch``. Without the fix, the
+    logged loss (and the gradient) of a step is the sum of its micro-batch means (#49)."""
+    import torch
+    from transformers import AutoModelForMaskedLM, AutoTokenizer
+
+    model_dir = save_tiny_bert(tiny_tokenizer, tmp_path / "tiny", dropout=0.0)
+    corpus = tmp_path / "corpus.txt"
+    corpus.write_text("\n".join(LINES * 5) + "\n", encoding="utf-8")
+    raw = {
+        "name": "accumulation",
+        "corpus": {"path": "corpus.txt", "max_chunks": 4},
+        "model": {"name": "./tiny", "max_len": 16},
+        "chunker": {"name": "./tiny", "max_len": 8},
+        "masking": {"probability": 0.5},
+        "training": {
+            "train_batch_size": 1,
+            "grad_accumulation": 4,
+            "logging_steps": 1,
+            "fp16": "false",
+        },
+        "output_root": "models",
+    }
+    config = p.parse_pretrain_config(raw, base_dir=tmp_path)
+    metrics = p.run_pretraining(config, log=lambda *_: None)
+    assert metrics["steps"] == 1  # 4 examples, batch 1, accumulation 4
+
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    chunks, _ = p.chunk_words(LINES * 5, p.piece_counter(tokenizer), budget=6, max_chunks=4)
+    examples = p.build_examples(chunks, tokenizer, 16, config.masking, config.seed)
+    model = AutoModelForMaskedLM.from_pretrained(model_dir).eval()  # the weights before the step
+    with torch.no_grad():
+        losses = [
+            model(**{k: torch.tensor([v[i]]) for k, v in examples.items()}).loss.item()
+            for i in range(len(chunks))
+        ]
+    assert len(losses) == 4
+    assert metrics["loss_first"] == pytest.approx(np.mean(losses), rel=1e-4)
