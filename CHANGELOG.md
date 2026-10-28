@@ -46,9 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `configs/pretrain/` (#36).
 - Arm comparison `kazner compare` (`kazner.compare`): exact-span recall difference of two arms
   on the preregistered entity subsets, paired bootstrap over test sentences with percentile
-  CIs and two-sided p-values, joint difference-in-differences, Holm correction; draft
-  preregistration of the causal test in `docs/preregistration-vocab.md`, revised for the
-  RTX 4090 with ten fine-tuning seeds, the pilot results and the pre-training run IDs; NER
+  CIs and two-sided p-values, joint difference-in-differences, Holm correction;
+  preregistration of the causal test in `docs/preregistration-vocab.md`, frozen at the tag
+  `prereg-37`: RTX 4090, ten fine-tuning seeds, pilot results, pre-training run IDs; NER
   configs of arms A and B and of the reference in `configs/causal/`; runbook for another GPU
   machine in `docs/causal-test-runbook.md` (#37).
 - Baselines next to mBERT: learning-rate screen configs for mBERT, XLM-R base and KazRoBERTa

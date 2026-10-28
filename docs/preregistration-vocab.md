@@ -1,10 +1,10 @@
 # Preregistration: does less fragmentation improve Kazakh NER? (#37)
 
-**Status: DRAFT, 2026-10-27; revised 2026-10-28** (pilot results, the loss fix of #49, the
-RTX 4090, ten fine-tuning seeds). This document becomes binding when it is merged into `main` and
-the merge commit is tagged `prereg-37`. That must happen before the first run of #37 (the
-continued pre-training of either arm included). Later changes are deviations: they are listed
-in section 7 with a reason and reported in the paper.
+**Status: FROZEN, 2026-10-28.** Drafted 2026-10-27 and revised 2026-10-28 (pilot results, the
+loss fix of #49, the RTX 4090, ten fine-tuning seeds). The binding version is the merge commit
+of this document into `main`, tagged `prereg-37`. It was frozen before the first run of #37
+(the continued pre-training of either arm included). Later changes are deviations: they are
+listed in section 7 with a reason and reported in the paper.
 
 ## 1. Question and hypotheses
 
@@ -232,7 +232,7 @@ intended:
 | Pre-training run IDs: arm A, arm B | `4ea205f2243c`, `cd81fd453b74` |
 | NER seeds per arm and method | 42–51 |
 | Test machine | NVIDIA RTX 4090 (24 GB), Astana IT University |
-| Freeze commit (`prereg-37`) | ___ |
+| Freeze commit | the merge commit tagged `prereg-37` (`git rev-parse prereg-37^{commit}`) |
 
 ## 7. Deviations
 
