@@ -538,3 +538,31 @@ log shows no driver or power event at that time.
 **Resolution.** Detached runs are only started with `ShowWindow = 0`. The watcher now checks that
 the launcher process is still alive, not only the status file, so a silent death is noticed at
 once. The rerun finished normally.
+
+## 2026-10-28 — Moving the causal test to another GPU, with more seeds
+
+**Problem.** The full #37 runs did not fit the laptop well. Arm B of the pilot filled its
+6 GB GPU and slowed to a third of its speed; both pre-training runs and the NER runs would
+have taken 9–13 hours of GPU time over several nights. The laptop is also needed for other
+work. Separately, #32 suggested that the effect to expect is about 1–2 recall points, while
+three fine-tuning seeds per arm could only detect about 2 points.
+
+**Decisions.**
+- Every run of #37 runs on a desktop RTX 4090 (24 GB) at the university. A different GPU gives
+  numbers that are not bit-identical to the laptop's, so the B2 runs are no longer the
+  reference in any comparison. A reference arm R (mBERT without continued pre-training, same
+  seeds) runs on the 4090 instead, and its comparison with arm A shows the effect of continued
+  pre-training alone. The pre-training batch stays 8 × 4, so the configs are unchanged.
+- Ten fine-tuning seeds per arm instead of three. To estimate what that buys, `kazner compare`
+  was run on null pairs (seeds of one model, #32 runs). The standard error on the primary
+  subset follows σ·√(1/k_A + 1/k_B) with σ ≈ 0.006, so ten seeds bring seed noise down to 0.0026.
+  A real difference adds a part that seeds do not remove: for mBERT against XLM-R it was 0.006.
+  The minimum detectable effect is therefore 0.7–1.8 recall points with ten seeds, against
+  1.3–2.2 with three. One pre-training run per arm remains a limitation.
+- The NER configs of arms A and B name the pre-training output directories by run ID. These IDs
+  were computed before any run from the config, the code tree, the corpus SHA-256 and the
+  model fingerprint. A pre-training run on a copied folder without `.git`, a different corpus
+  file or changed code would get another ID, and the NER runs would then fail instead of
+  silently using another model. The same mechanism means that any change under `src/kazner`
+  that reaches `main` before the freeze changes the IDs. The preregistration must therefore be
+  frozen before other code is merged, or the IDs must be recomputed.
