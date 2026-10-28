@@ -1,0 +1,25 @@
+# Grid extension (#32): the best screen rate was at the top edge of the grid, so the grid is
+# extended by one step before choosing (docs/baselines.md). Seed 42, protocol as the screen.
+name: baseline_mbert_lr1e-4
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  revision: "3f076fdb1ab68d5b2880cb87a0886f315b8146f8"  # pinned Hub commit (#31)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 1.0e-4
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42]
+output_root: ../../runs

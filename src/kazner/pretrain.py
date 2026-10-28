@@ -367,6 +367,10 @@ def run_pretraining(
     cuda = torch.cuda.is_available()
     set_all_seeds(cfg.seed)
     model = AutoModelForMaskedLM.from_pretrained(location, **hub(cfg.model))
+    # The Trainer sees ``**kwargs`` in forward and leaves the loss undivided by the accumulation
+    # steps, but the model ignores ``num_items_in_batch``: without this, the logged loss and the
+    # gradient would be the sum of the micro-batch means (#49).
+    model.accepts_loss_kwargs = False
     args = TrainingArguments(
         output_dir=str(run_dir / "checkpoints"),
         per_device_train_batch_size=t.train_batch_size,

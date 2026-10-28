@@ -1,0 +1,27 @@
+# Selected rate for KazRoBERTa (#32): 1e-4, the best validation F1 of the screen. The grid was
+# extended to 2e-4, which was worse (validation F1 0.8947). Seeds 42-44; seed 42 has the same
+# run ID as the screen run and is not trained again.
+name: baseline_kazroberta_best
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: kz-transformers/kaz-roberta-conversational
+  revision: "43077c2fd0a163487ed468b5ec3b8750686a5888"  # pinned Hub commit (#31)
+  add_prefix_space: true  # byte-level BPE (#30)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 1.0e-4
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../../runs

@@ -485,3 +485,56 @@ results.
   fine-tuning seeds but have one continued pre-training run each. The seed-vs-seed checks
   show that this does not make the test anti-conservative at the scale of the planned
   comparison; pre-training seed variance remains a limitation, listed in the preregistration.
+
+## 2026-10-27 — The pre-training loss was four times too large
+
+**Problem.** The #37 pilot (`kazner pretrain --max-chunks 2000`, batch 8 × gradient
+accumulation 4, 63 steps) logged a masked-LM loss of about 18 for mBERT and 26 for the extended
+model. A uniform guess over mBERT's 119,547 pieces would give ln 119,547 ≈ 11.7, so these could
+not be plain cross-entropies. Computed directly, the initial models had a loss of 4.90 and 8.05
+per predicted piece on the pilot's chunks.
+
+**Cause.** In transformers 5.0.0 the `Trainer` checks whether the model's `forward` accepts
+`**kwargs`. `BertForMaskedLM.forward` does, so the Trainer passes `num_items_in_batch`, expects
+the model to average the loss over the whole accumulated batch, and does not divide each
+micro-batch loss by the number of accumulation steps. `BertForMaskedLM` ignores the argument and
+returns a plain mean. Every optimizer step therefore used the sum of four micro-batch means: the
+logged loss and the gradient were four times too large. A one-step test on a tiny model shows
+the factor exactly: 15.162 logged against a mean of 3.791.
+
+**Resolution (#49).** `run_pretraining` sets `model.accepts_loss_kwargs = False`, so the Trainer
+divides by the accumulation steps. An offline test checks that the logged loss of one step
+equals the mean of its micro-batch losses. Both pilots were rerun on the fixed code:
+
+- From step 15 on, the new logged loss is the old one divided by 3.99–4.02. The updates were
+  practically unchanged: the true gradient norm was 7–24 at every logged step, so clipping at
+  norm 1 removed the scale in both versions.
+- The first logged value (mean of steps 1–5) is 4.89 for mBERT and 8.14 for the extended model.
+  Computed directly from the initial models in training mode (dropout on) on the same 2,000
+  chunks, the values are 4.90 and 8.05. The remaining difference is sampling noise: steps 1–5
+  see 160 of the 2,000 chunks.
+
+No full pre-training run had been made, so nothing has to be redone.
+
+**NER training keeps the old behaviour.** `BertForTokenClassification`, and the RoBERTa and
+XLM-R classes for token classification and masked LM, also take `**kwargs` and ignore
+`num_items_in_batch`. Every NER run so far, the pilot's included, used gradient accumulation 2.
+Each therefore logged twice its training loss and stepped with twice the gradient. Validation
+and test metrics are computed without accumulation and are not affected. AdamW is nearly
+insensitive to a constant gradient scale, and clipping at norm 1 removes it whenever it clips.
+Changing NER training now would break the bit-exact reproduction of the pilot (#11) and separate
+new runs from the #32 baselines. The NER code is left as it is, and its logged training losses
+are read as twice the mean.
+
+## 2026-10-27 — A detached run that was not hidden
+
+**Problem.** The first attempt at the #37 pilot died after 48 of 63 steps. Its log ends in `^C`,
+the launcher wrote no exit line, and its `nvidia-smi` logger was left running. Every earlier
+series had been started through WMI with `Win32_ProcessStartup.ShowWindow = 0`. This one was
+started with `powershell -WindowStyle Hidden` instead, which left a console window on screen.
+The window was closed or interrupted, and that ended the whole process tree. The Windows event
+log shows no driver or power event at that time.
+
+**Resolution.** Detached runs are only started with `ShowWindow = 0`. The watcher now checks that
+the launcher process is still alive, not only the status file, so a silent death is noticed at
+once. The rerun finished normally.
