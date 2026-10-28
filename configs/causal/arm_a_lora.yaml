@@ -1,0 +1,29 @@
+# Causal vocabulary test (#37, docs/preregistration-vocab.md). Arm A: mBERT after continued
+# pre-training with its ORIGINAL vocabulary; LoRA with the best setting of experiment C. Fine-
+# tuning settings are identical in every arm.
+# The directory is the pre-training run 4ea205f2243c: its run ID was computed at the freeze from
+# the code tree, the config and the corpus SHA-256. If the pre-training inputs differ, the run
+# gets another ID and this config stops with a missing-directory error.
+name: causal_arm_a_lora
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: ../../models/4ea205f2243c  # from configs/pretrain/mbert_kk_original.yaml
+  max_len: 128
+method:
+  name: lora
+  lora: {r: 16, alpha: 32, dropout: 0.1, target_modules: [query, value]}
+training:
+  learning_rate: 1.0e-3
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+output_root: ../../runs
