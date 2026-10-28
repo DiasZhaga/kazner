@@ -68,6 +68,33 @@ def test_every_shipped_config_is_valid(path):
         assert c.model.add_prefix_space is ("roberta-conversational" in c.model.name or None)
 
 
+def test_causal_test_arms_differ_only_in_the_start_model():
+    """#37: per method, arms A, B and the reference share every fine-tuning setting, the
+    settings of the B2 reference runs, and ten seeds; A and B start from their pre-training."""
+    configs = {p.stem: load_config(p) for p in (ROOT / "configs" / "causal").glob("*.yaml")}
+    arms, methods = ("arm_a", "arm_b", "reference"), ("full", "lora")
+    assert sorted(configs) == [f"{arm}_{method}" for arm in arms for method in methods]
+    b2 = {
+        "full": load_config(ROOT / "configs" / "baselines" / "mbert_best.yaml"),
+        "lora": load_config(ROOT / "configs" / "lora_best_10pct.yaml"),
+    }
+    for method, ref in b2.items():
+        for arm in arms:
+            c = configs[f"{arm}_{method}"]
+            assert (c.method, c.training) == (ref.method, ref.training)
+            same_data = ("train_fraction", "subsample_seed", "max_train_samples")
+            assert all(getattr(c.data, k) == getattr(ref.data, k) for k in same_data)
+            assert c.model.max_len == ref.model.max_len == 128
+            assert c.seeds == tuple(range(42, 52))
+            assert c.resolve(c.output_root) == (ROOT / "runs").resolve()
+        assert configs[f"reference_{method}"].model == b2["full"].model  # pinned original mBERT
+    start = {arm: configs[f"{arm}_full"].model_location() for arm in ("arm_a", "arm_b")}
+    assert start["arm_a"] != start["arm_b"]
+    for arm, location in start.items():
+        assert configs[f"{arm}_lora"].model_location() == location
+        assert Path(location).parent == (ROOT / "models").resolve()  # pretrain output_root
+
+
 def test_yaml_scientific_notation_without_dot_is_a_number(tmp_path):
     """PyYAML reads `5e-5` as a string; the loader must still accept it as a float."""
     path = tmp_path / "c.yaml"
