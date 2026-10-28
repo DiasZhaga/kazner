@@ -368,6 +368,11 @@ and a two-sided p-value from a paired bootstrap over test sentences. The differe
 differences (primary − specificity) is bootstrapped jointly, and the primary tests of all
 pairs are Holm-corrected.
 
+The test's configs are in `configs/causal/`: arms A and B start from the two pre-training runs
+named in the preregistration, the reference R from mBERT itself, with ten fine-tuning seeds
+each. [docs/causal-test-runbook.md](docs/causal-test-runbook.md) is the checklist for running
+them on another GPU machine.
+
 ## Continued pre-training
 
 ```bash
@@ -480,7 +485,8 @@ scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_pre
                    reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
 docs/              technology-choices.md, traceability.md, reproduction.md, baselines.md,
-                   fragmentation.md, vocabulary.md, challenges.md
+                   fragmentation.md, vocabulary.md, preregistration-vocab.md,
+                   causal-test-runbook.md, challenges.md
 .github/workflows/ ci.yml, release.yml
 ```
 
@@ -492,6 +498,8 @@ Documentation:
 - [baselines: XLM-R and KazRoBERTa](docs/baselines.md);
 - [fragmentation and errors (B2)](docs/fragmentation.md);
 - [vocabulary extension: size report](docs/vocabulary.md);
+- [preregistration of the causal vocabulary test (#37)](docs/preregistration-vocab.md) and
+  [its runbook](docs/causal-test-runbook.md);
 - [decisions and problems log](docs/challenges.md);
 - [changelog](CHANGELOG.md).
 
