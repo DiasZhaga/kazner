@@ -66,6 +66,22 @@ def _cmd_pretrain(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compare(args: argparse.Namespace) -> int:
+    import pandas as pd
+
+    from kazner.compare import Pair, compare, format_comparison, write_comparison
+
+    def runs(text: str) -> tuple[str, ...]:
+        return tuple(r.strip() for r in text.split(",") if r.strip())
+
+    pairs = [Pair(name, runs(a), runs(b)) for name, a, b in args.pair]
+    report = compare(pd.read_csv(args.entities), pairs, args.bootstrap, args.seed)
+    if args.out is not None:
+        write_comparison(args.out, report)
+    print(format_comparison(report))
+    return 0
+
+
 def _cmd_aggregate(args: argparse.Namespace) -> int:
     from kazner.aggregate import aggregate, format_table, load_runs, write_csv
 
@@ -194,6 +210,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-chunks", type=int, help="use only the first N chunks (changes the run ID)"
     )
     pre.set_defaults(func=_cmd_pretrain)
+
+    cmp = commands.add_parser(
+        "compare",
+        help="paired bootstrap comparison of two arms on fixed entity subsets (#37)",
+        description="Delta in exact-span recall (arm B minus arm A, seed means) on the "
+        "preregistered entity subsets of an entities.csv from 'kazner fragmentation', with a "
+        "paired bootstrap over test sentences and Holm correction over the pairs.",
+    )
+    cmp.add_argument("--entities", type=Path, required=True, help="entities.csv with hit columns")
+    cmp.add_argument(
+        "--pair",
+        nargs=3,
+        action="append",
+        required=True,
+        metavar=("NAME", "A_RUNS", "B_RUNS"),
+        help="a comparison: name, comma-separated run IDs of arm A, then of arm B (repeatable)",
+    )
+    cmp.add_argument("--bootstrap", type=int, default=10000, help="bootstrap replicates")
+    cmp.add_argument("--seed", type=int, default=0, help="bootstrap random seed")
+    cmp.add_argument("--out", type=Path, help="write the JSON report here")
+    cmp.set_defaults(func=_cmd_compare)
 
     agg = commands.add_parser(
         "aggregate",
