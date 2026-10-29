@@ -31,11 +31,10 @@ checkout → build test image → lint → unit tests → build runtime image �
 | Push to Docker Hub | only on `main` and only when `DOCKERHUB_REPO` is set; tags `<sha>` and `latest` |
 | Deploy to Kubernetes (test) | only on `main`: a Job `kazner-evaluate-<sha>-<build>` in `kazner-test` runs the same evaluation in the cluster; the stage waits for completion and checks the log |
 
-Every branch with a `Jenkinsfile` is built. The job polls GitHub every 2 minutes, because a
-webhook cannot reach a Jenkins on localhost. When Jenkins is first started, the branches that
-already exist are not built, so that ~30 old branches do not build at once. The same strategy
-also skips the first discovery of a new branch: start that first build by hand, or push a
-second commit. After that, every commit is built.
+Every branch that contains a `Jenkinsfile` is built when it is discovered and on every new
+commit. The job polls GitHub every 2 minutes, because a webhook cannot reach a Jenkins on
+localhost. Older branches were created before the `Jenkinsfile` existed, so the scan skips
+them ("Does not meet criteria").
 
 ## Start
 
@@ -49,8 +48,8 @@ bash ci/jenkins/k8s-setup.sh                      # namespace + ci/jenkins/secre
 docker compose -f ci/jenkins/compose.yaml up -d --build
 ```
 
-Open <http://localhost:8080> and log in as `admin`. The `kazner` job appears. Its first scan
-lists the branches; trigger a build of `main` by hand.
+Open <http://localhost:8080> and log in as `admin`. The `kazner` job appears, scans the
+repository and builds `main` and every other branch with a `Jenkinsfile`.
 
 Without Kubernetes, create an empty `ci/jenkins/secrets/kubeconfig` instead of running the
 setup script. Then everything except the deploy stage works.

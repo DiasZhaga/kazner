@@ -663,8 +663,8 @@ mounted) raised five issues:
   container with `docker cp`, and the container is named from the commit SHA and the build
   number.
 - The job polls the repository every 2 minutes. The `skipInitialBuildOnFirstBranchIndexing`
-  strategy prevents the build storm. Its cost: the first discovery of a new branch is not
-  built either, so that first build is started by hand. The fix commit itself was picked up by
+  strategy was meant to prevent the build storm. This was a mistake, corrected in #57 (next
+  entry). The fix commit itself was picked up by
   polling and built automatically (build #2, 89 s with cached layers, 332 tests, 97% line
   coverage).
 - The controller joins group 0 (`group_add`) and keeps the unprivileged `jenkins` user. This is
@@ -674,3 +674,20 @@ mounted) raised five issues:
   Secrets. Docker Desktop's kubeadm cluster uses the same engine as `docker build`, so the Job
   starts the image built by the pipeline without a registry. The kind provisioning mode would
   need `kind load`.
+
+## 2026-10-29 — The branch-build strategy was wrong and unnecessary (#57)
+
+**Problem.** After #56 was merged, `main` received a new commit, and Jenkins still did not
+build it. `skipInitialBuildOnFirstBranchIndexing` does not only skip the very first scan: it
+keeps skipping a branch until that branch has been built once. On `ci/54-jenkins`, polling
+had worked only because build #1 had been started by hand. So `main` #1 was also started by
+hand. The strategy was also unnecessary. The old branches were created before the
+`Jenkinsfile` existed, and the scan already skips them ("Does not meet criteria"). The build
+storm it was meant to prevent could not happen.
+
+**Resolution.** The strategy and its plugin were removed. Every branch with a `Jenkinsfile`
+is now built when it is discovered and on every new commit. This was verified on the running
+controller: the new `fix/57-jenkins-first-build` branch was built when the scan discovered it,
+without a manual start. Lesson: I had inferred the
+strategy's behaviour from its name and from one observation. I should have checked which
+branches can match at all before adding a safeguard.
