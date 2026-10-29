@@ -16,6 +16,11 @@ grouped by config fields and averaged over seeds. The seed-mean F1 of step 3 get
 percentile CI from a bootstrap over the extra set's sentences. A secondary table gives the
 exact-span recall of the extra set's entities by mean pieces per word under a reference
 tokenizer, in the bins of ``kazner fragmentation``.
+
+The extra set's scores are also given by sentence kind (:func:`sentence_kind`). WikiANN ``kk``
+contains Kazakh Wikipedia redirect lines and article first lines, labelled by other conventions
+than running text; ``other_unique`` keeps the remaining sentences, each distinct one once. For a
+set without such lines every sentence is ``other``.
 """
 
 from __future__ import annotations
@@ -43,6 +48,11 @@ SOURCE_STEPS = ("kaznerd", "kaznerd_mapped")
 MAPPING_KEYS = ("source", "target", "target_types", "mapping")
 METRICS = ("precision", "recall", "f1")
 CHUNK = 500  # bootstrap replicates drawn at once
+#: Kazakh Wikipedia's redirect keyword (``#REDIRECT``): the line names the target article.
+REDIRECT_WORD = "АЙДАУ"
+#: An article's first line starts with what is left of the bold-title markup ``'''``.
+BOLD_TITLE_MARKS = ("'", "''")
+SENTENCE_KINDS = ("redirect", "bold_title", "other")
 
 PieceCounter = Callable[[str], tuple[int, bool]]
 
@@ -216,14 +226,70 @@ def bootstrap_mean_f1(
     return [float(np.percentile(values, 2.5)), float(np.percentile(values, 97.5))]
 
 
+def sentence_kind(words: Sequence[str]) -> str:
+    """``redirect``, ``bold_title`` (an article's first line) or ``other``."""
+    if words and words[0] == REDIRECT_WORD:
+        return "redirect"
+    if words and words[0] in BOLD_TITLE_MARKS:
+        return "bold_title"
+    return "other"
+
+
+def sentence_subsets(sentences: Sequence[Sequence[str]]) -> dict[str, np.ndarray]:
+    """Boolean masks over the sentences: one per kind, and ``other_unique``.
+
+    ``other_unique`` marks the first occurrence of each distinct ``other`` sentence.
+    """
+    kinds = [sentence_kind(words) for words in sentences]
+    subsets = {kind: np.array([k == kind for k in kinds], dtype=bool) for kind in SENTENCE_KINDS}
+    seen: set[tuple[str, ...]] = set()
+    unique = np.zeros(len(sentences), dtype=bool)
+    for i, (kind, words) in enumerate(zip(kinds, sentences, strict=True)):
+        if kind == "other" and tuple(words) not in seen:
+            seen.add(tuple(words))
+            unique[i] = True
+    subsets["other_unique"] = unique
+    return subsets
+
+
+def subset_scores(
+    counts: Sequence[np.ndarray], mask: np.ndarray, bootstrap: int, seed: int
+) -> dict[str, Any]:
+    """Micro P/R/F1 (mean ± sd over runs) and the bootstrap CI on the sentences in ``mask``."""
+    per_run = []
+    for c in counts:
+        correct, n_pred, n_gold = (int(x) for x in c[mask].sum(axis=0))
+        per_run.append({
+            "precision": correct / n_pred if n_pred else 0.0,
+            "recall": correct / n_gold if n_gold else 0.0,
+            "f1": 2 * correct / (n_pred + n_gold) if n_pred + n_gold else 0.0,
+        })  # fmt: skip
+    out: dict[str, Any] = {
+        "sentences": int(mask.sum()),
+        "gold_entities": int(counts[0][mask, 2].sum()),
+    }
+    for metric in METRICS:
+        out[metric], out[f"{metric}_sd"] = _mean_sd([s[metric] for s in per_run])
+    out["f1_ci95"] = bootstrap_mean_f1([c[mask] for c in counts], bootstrap, seed)
+    return out
+
+
 def recall_by_pieces(
-    runs: Sequence[TransferRun], mapping: LabelMapping, pieces_of: PieceCounter
+    runs: Sequence[TransferRun],
+    mapping: LabelMapping,
+    pieces_of: PieceCounter,
+    sentences: np.ndarray | None = None,
 ) -> list[dict[str, Any]]:
-    """Exact-span recall of the extra set's gold entities by mean pieces per word."""
+    """Exact-span recall of the extra set's gold entities by mean pieces per word.
+
+    ``sentences`` (a boolean mask) restricts the entities to some sentences.
+    """
     first = runs[0].extra
     bins: list[str] = []
     keys: list[tuple[int, str, int, int]] = []
     for i, (words, gold) in enumerate(zip(first.words, first.gold, strict=True)):
+        if sentences is not None and not sentences[i]:
+            continue
         for etype, start, end in get_entities(list(gold)):
             pieces = [pieces_of(w)[0] for w in words[start : end + 1]]
             bins.append(fertility_bin(sum(pieces) / len(pieces)))
@@ -325,6 +391,14 @@ def analyse(
         }
         if pieces_of is not None:
             group["recall_by_pieces"] = recall_by_pieces(members, mapping, pieces_of)
+        group["subsets"] = {}
+        for name, mask in sentence_subsets(members[0].extra.words).items():
+            if not mask.any():
+                continue
+            subset = subset_scores(counts, mask, bootstrap, seed)
+            if pieces_of is not None:
+                subset["recall_by_pieces"] = recall_by_pieces(members, mapping, pieces_of, mask)
+            group["subsets"][name] = subset
         report["groups"].append(group)
     return report
 
@@ -364,6 +438,19 @@ def format_report(report: Mapping[str, Any]) -> str:
                 f"  {extra} recall, pieces/word {row['bin']:<6} n={row['n']:<5} "
                 f"{_fmt(row['recall'], row['sd'])}"
             )
+        for name, s in group["subsets"].items():
+            low, high = s["f1_ci95"]
+            lines.append(
+                f"  {extra}/{name:<12} {s['sentences']:>5} sent. {s['gold_entities']:>5} gold  "
+                f"P {_fmt(s['precision'])}  R {_fmt(s['recall'])}  F1 {_fmt(s['f1'], s['f1_sd'])}"
+                f"  95% CI [{low:.4f}, {high:.4f}]"
+            )
+        unique = group["subsets"].get("other_unique", {})
+        for row in unique.get("recall_by_pieces", []):
+            lines.append(
+                f"  {extra}/other_unique recall, pieces/word {row['bin']:<6} n={row['n']:<5} "
+                f"{_fmt(row['recall'], row['sd'])}"
+            )
     return "\n".join(lines)
 
 
@@ -396,5 +483,13 @@ def write_outputs(out_dir: str | Path, report: Mapping[str, Any]) -> Path:
                     **group["group"], "step": step, "n_runs": len(group["runs"]),
                     "precision": s["precision"], "recall": s["recall"], "f1": s["f1"],
                     "f1_sd": s["f1_sd"], "f1_ci_low": low, "f1_ci_high": high,
+                })  # fmt: skip
+            for name, s in group["subsets"].items():
+                low, high = s["f1_ci95"]
+                writer.writerow({
+                    **group["group"], "step": f"{report['extra_test']}/{name}",
+                    "n_runs": len(group["runs"]), "precision": s["precision"],
+                    "recall": s["recall"], "f1": s["f1"], "f1_sd": s["f1_sd"],
+                    "f1_ci_low": low, "f1_ci_high": high,
                 })  # fmt: skip
     return out_dir / "transfer.json"

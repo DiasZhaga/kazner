@@ -2,6 +2,7 @@ import csv
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from kazner.cli import main
@@ -17,6 +18,9 @@ from kazner.transfer import (
     parse_mapping,
     recall_by_pieces,
     score_run,
+    sentence_kind,
+    sentence_subsets,
+    subset_scores,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -153,6 +157,39 @@ def test_recall_by_pieces_bins_the_extra_entities():
     assert (by_bin["(2,3]"]["n"], by_bin["(2,3]"]["recall"]) == (1, 0.0)
     assert (by_bin["1.0"]["n"], by_bin["1.0"]["recall"]) == (1, 0.0)
     assert by_bin[">3"] == {"bin": ">3", "n": 0, "recall": None, "sd": None}
+    second = recall_by_pieces([run], MAPPING, lambda word: (len(word) // 3, False),
+                              np.array([False, True]))  # fmt: skip
+    assert [r["n"] for r in second] == [1, 0, 0, 0]  # only "Марат"
+
+
+def test_sentence_kinds_and_unique_other_sentences():
+    sentences = [
+        ["АЙДАУ", "Apple", "Inc"],
+        ["'", "''", "Ивака", "''", "'", "—", "Ресейдегі", "өзен", "."],
+        ["Асан", "келді"],
+        ["Асан", "келді"],
+        ["''", "Ла", "Лига", "''"],
+        ["Ол", "АЙДАУ", "деді"],
+        [],
+    ]
+    kinds = [sentence_kind(s) for s in sentences]
+    assert kinds == ["redirect", "bold_title", "other", "other", "bold_title", "other", "other"]
+    subsets = sentence_subsets(sentences)
+    assert list(subsets) == ["redirect", "bold_title", "other", "other_unique"]
+    assert subsets["other"].tolist() == [False, False, True, True, False, True, True]
+    assert subsets["other_unique"].tolist() == [False, False, True, False, False, True, True]
+
+
+def test_subset_scores_equal_seqeval_on_the_subset():
+    gold, pred = EXTRA.gold, [MAPPING.map_tags(p) for p in EXTRA.pred]
+    counts = entity_counts(gold, pred)
+    scores = subset_scores([counts, counts], np.array([True, False]), bootstrap=100, seed=0)
+    expected = compute_metrics(gold[:1], pred[:1])  # PER found, ORG predicted as LOC
+    assert (scores["sentences"], scores["gold_entities"]) == (1, 2)
+    for metric in ("precision", "recall", "f1"):
+        assert scores[metric] == pytest.approx(expected[metric])
+    assert scores["f1_sd"] == pytest.approx(0.0)
+    assert len(scores["f1_ci95"]) == 2
 
 
 def test_analyse_groups_runs_and_averages_seeds(tmp_path):
@@ -170,6 +207,9 @@ def test_analyse_groups_runs_and_averages_seeds(tmp_path):
     assert len(first["steps"]["wiki"]["f1_ci95"]) == 2
     assert "f1_ci95" not in first["steps"]["kaznerd"]
     assert report["steps"] == ["kaznerd", "kaznerd_mapped", "wiki"]
+    # Neither sentence is a redirect or an article's first line: only "other" subsets.
+    assert list(first["subsets"]) == ["other", "other_unique"]
+    assert first["subsets"]["other"]["f1"] == pytest.approx(first["steps"]["wiki"]["f1"])
 
 
 def test_analyse_refuses_runs_on_different_test_sets(tmp_path):
@@ -203,5 +243,6 @@ def test_cli_writes_json_and_csv(tmp_path, capsys):
     assert report["reference_tokenizer"] is None
     with (out / "transfer.csv").open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
-    assert [r["step"] for r in rows] == ["kaznerd", "kaznerd_mapped", "wiki"]
+    steps = ["kaznerd", "kaznerd_mapped", "wiki", "wiki/other", "wiki/other_unique"]
+    assert [r["step"] for r in rows] == steps
     assert rows[2]["n_runs"] == "2" and rows[2]["f1_ci_low"] != ""
