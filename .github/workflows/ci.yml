@@ -67,6 +67,22 @@ jobs:
             coverage.xml
             junit.xml
 
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the test image
+        run: docker build --target test -t kazner:test .
+      - name: Run the offline tests inside the container
+        run: docker run --rm kazner:test
+      - name: Build the runtime image
+        run: docker build -t kazner:ci .
+      - name: Smoke-test the runtime image
+        run: |
+          docker run --rm kazner:ci --version
+          docker run --rm kazner:ci evaluate --predictions /opt/kazner/examples/contract_example.csv
+
   smoke:
     name: smoke
     runs-on: ubuntu-latest
