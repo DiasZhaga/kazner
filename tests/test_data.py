@@ -1,18 +1,25 @@
 import hashlib
+import io
+import json
 from pathlib import Path
 
 import pytest
 
 from kazner.data import (
     KAZNERD_SPLITS,
+    WIKIANN_LABELS,
+    WIKIANN_SHA256,
     IOB2FormatError,
     build_label2id,
     download_kaznerd,
+    download_wikiann_kk,
     read_iob2,
     read_splits,
     sample_fraction,
     sample_indices,
     training_subsample,
+    wikiann_to_iob2,
+    write_iob2,
 )
 from reference import pilot_data
 
@@ -214,3 +221,91 @@ def test_download_rejects_checksum_mismatch(tmp_path):
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         download_kaznerd(tmp_path, files={"IOB2_test.txt": sha(b"original")}, fetch=fetch)
     assert not (tmp_path / "IOB2_test.txt").exists()
+
+
+# --- WikiANN (#51) ---------------------------------------------------------------------
+
+#: Synthetic WikiANN-style rows: tokens and ner_tags ids (1 B-PER, 3 B-ORG, 4 I-ORG, 5 B-LOC).
+ROWS = [(["Айгүл", "Астанада", "тұрады"], [1, 5, 0]), (["Бек", "университет", "кеңесі"], [1, 3, 4])]
+WIKI_PARQUET = "test-00000-of-00001.parquet"
+
+
+def wikiann_parquet(rows=ROWS, names=WIKIANN_LABELS, metadata=True) -> bytes:
+    """A parquet file laid out like the Hub's WikiANN files, with Hugging Face metadata."""
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    table = pa.table({"tokens": [r[0] for r in rows], "ner_tags": [r[1] for r in rows]})
+    if metadata:
+        features = {
+            "tokens": {"feature": {"dtype": "string", "_type": "Value"}, "_type": "Sequence"},
+            "ner_tags": {
+                "feature": {"names": list(names), "_type": "ClassLabel"},
+                "_type": "Sequence",
+            },
+        }
+        info = json.dumps({"info": {"features": features}})
+        table = table.replace_schema_metadata({"huggingface": info})
+    buffer = io.BytesIO()
+    pq.write_table(table, buffer)
+    return buffer.getvalue()
+
+
+def test_write_iob2_round_trips_through_read_iob2(tmp_path):
+    tokens, labels = [["Айгүл", "тұрады"], ["Бек"]], [["B-PER", "O"], ["B-PER"]]
+    path = write_iob2(tmp_path / "x.txt", tokens, labels)
+    assert read_iob2(path) == (tokens, labels)
+    assert b"\r" not in path.read_bytes()
+
+
+@pytest.mark.parametrize("word", ["", "a b", "a\tb"])
+def test_write_iob2_rejects_tokens_that_would_break_the_format(tmp_path, word):
+    with pytest.raises(IOB2FormatError, match="empty or has whitespace"):
+        write_iob2(tmp_path / "x.txt", [[word]], [["O"]])
+
+
+def test_wikiann_tags_are_named_by_the_class_names_in_the_file():
+    tokens, labels = wikiann_to_iob2(wikiann_parquet())
+    assert tokens == [r[0] for r in ROWS]
+    assert labels == [["B-PER", "B-LOC", "O"], ["B-PER", "B-ORG", "I-ORG"]]
+
+
+def test_wikiann_with_other_or_missing_class_names_is_rejected():
+    shuffled = ("O", "B-LOC", "I-LOC", "B-PER", "I-PER", "B-ORG", "I-ORG")
+    with pytest.raises(ValueError, match="unexpected ner_tags class names"):
+        wikiann_to_iob2(wikiann_parquet(names=shuffled))
+    with pytest.raises(ValueError, match="no ner_tags class names"):
+        wikiann_to_iob2(wikiann_parquet(metadata=False))
+
+
+def test_download_wikiann_writes_splits_and_a_manifest(tmp_path):
+    data = wikiann_parquet()
+    fetch, calls = fake_hub({WIKI_PARQUET: data})
+    files = {"test": sha(data)}
+
+    manifest = download_wikiann_kk(tmp_path, files=files, commit="abc", fetch=fetch)
+
+    assert calls == [
+        f"https://huggingface.co/datasets/unimelb-nlp/wikiann/resolve/abc/kk/{WIKI_PARQUET}"
+    ]
+    assert read_iob2(tmp_path / "IOB2_test.txt")[1] == [
+        ["B-PER", "B-LOC", "O"],
+        ["B-PER", "B-ORG", "I-ORG"],
+    ]
+    test = manifest["splits"]["test"]
+    assert (test["sentences"], test["tokens"]) == (2, 6)
+    assert test["entities"] == {"LOC": 1, "ORG": 1, "PER": 2}
+    assert test["parquet_sha256"] == sha(data)
+    assert json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8")) == manifest
+    download_wikiann_kk(tmp_path, files=files, fetch=fetch)
+    assert len(calls) == 1  # the verified parquet file is reused
+
+
+def test_download_wikiann_rejects_checksum_mismatch(tmp_path):
+    fetch, _ = fake_hub({WIKI_PARQUET: b"tampered"})
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        download_wikiann_kk(tmp_path, files={"test": sha(b"original")}, fetch=fetch)
+    assert not (tmp_path / "IOB2_test.txt").exists()
+
+
+def test_pinned_wikiann_files_are_the_three_splits():
+    assert set(WIKIANN_SHA256) == set(KAZNERD_SPLITS)  # written under KazNERD's file names

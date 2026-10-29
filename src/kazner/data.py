@@ -168,3 +168,120 @@ def download_kaznerd(
         partial.write_bytes(data)
         partial.replace(target)
     return paths
+
+
+# --------------------------------------------------------------------------- WikiANN (#51)
+
+#: Kazakh part of WikiANN on the Hugging Face Hub, at the commit the checksums refer to.
+WIKIANN_REPO = "unimelb-nlp/wikiann"
+WIKIANN_COMMIT = "f0a3be6dc5564c0cc4150bb660144800a1f539d4"
+WIKIANN_URL = (
+    "https://huggingface.co/datasets/{repo}/resolve/{commit}/kk/{split}-00000-of-00001.parquet"
+)
+#: SHA-256 of the parquet files as published (the Hub's LFS metadata), keyed by split.
+WIKIANN_SHA256: dict[str, str] = {
+    "train": "0360ddaebb431285a74241db0f00a3ed0c7605ef290b5669f340a334408ceecd",
+    "validation": "e7f860c1c616942e17879bf536827d4960b3f09d00f9ad0e833d4d184c981c19",
+    "test": "176f3870d82b91e52c813b35744850fc041cead3769e976210a42d9d846cc3e5",
+}
+#: Class names of WikiANN's ``ner_tags``, in id order.
+WIKIANN_LABELS = ("O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC")
+
+
+def write_iob2(path: str | Path, tokens: Sentences, labels: Sentences) -> Path:
+    """Write sentences as ``<token> <label>`` lines with a blank line after each (LF)."""
+    lines: list[str] = []
+    for i, (words, tags) in enumerate(zip(tokens, labels, strict=True)):
+        if not words or len(words) != len(tags):
+            raise IOB2FormatError(f"sentence {i}: {len(words)} tokens and {len(tags)} labels")
+        for word, tag in zip(words, tags, strict=True):
+            if not word or any(ch.isspace() for ch in word):
+                raise IOB2FormatError(f"sentence {i}: token {word!r} is empty or has whitespace")
+            lines.append(f"{word} {tag}\n")
+        lines.append("\n")
+    path = Path(path)
+    path.write_text("".join(lines), encoding="utf-8", newline="\n")
+    return path
+
+
+def wikiann_to_iob2(parquet: bytes) -> tuple[Sentences, Sentences]:
+    """Tokens and IOB2 labels of a WikiANN parquet file.
+
+    The label names are checked against the class names stored in the file's Hugging Face
+    metadata, so a changed label order cannot pass silently.
+    """
+    import io
+    import json
+
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(io.BytesIO(parquet))
+    try:
+        features = json.loads(table.schema.metadata[b"huggingface"])["info"]["features"]
+        names = tuple(features["ner_tags"]["feature"]["names"])
+    except (TypeError, KeyError, ValueError) as exc:
+        raise ValueError(f"no ner_tags class names in the parquet metadata ({exc!r})") from None
+    if names != WIKIANN_LABELS:
+        raise ValueError(f"unexpected ner_tags class names {names}, expected {WIKIANN_LABELS}")
+    tokens = [list(words) for words in table.column("tokens").to_pylist()]
+    labels = [[names[i] for i in tags] for tags in table.column("ner_tags").to_pylist()]
+    return tokens, labels
+
+
+def download_wikiann_kk(
+    dest_dir: str | Path,
+    *,
+    force: bool = False,
+    files: Mapping[str, str] = WIKIANN_SHA256,
+    commit: str = WIKIANN_COMMIT,
+    fetch: Callable[[str], bytes] = _fetch_url,
+) -> dict[str, object]:
+    """Download WikiANN ``kk``, verify the parquet files and write IOB2 splits.
+
+    The parquet files are kept in ``dest_dir/parquet``. Valid files are not downloaded again
+    unless ``force`` is set. The splits get KazNERD's file names
+    (:data:`KAZNERD_SPLITS`), and ``manifest.json`` records the source and checksums.
+    """
+    import json
+
+    dest_dir = Path(dest_dir)
+    raw_dir = dest_dir / "parquet"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    manifest: dict[str, object] = {
+        "source": f"https://huggingface.co/datasets/{WIKIANN_REPO}",
+        "config": "kk",
+        "commit": commit,
+        "licence": "unknown on the dataset card; the text comes from Wikipedia (CC BY-SA)",
+        "labels": list(WIKIANN_LABELS),
+    }
+    splits: dict[str, dict[str, object]] = {}
+    for split, expected in files.items():
+        raw = raw_dir / f"{split}.parquet"
+        if force or not raw.is_file() or _sha256(raw.read_bytes()) != expected:
+            data = fetch(WIKIANN_URL.format(repo=WIKIANN_REPO, commit=commit, split=split))
+            actual = _sha256(data)
+            if actual != expected:
+                raise ValueError(f"{split}: SHA-256 mismatch (expected {expected}, got {actual})")
+            partial = raw.with_name(raw.name + ".part")
+            partial.write_bytes(data)
+            partial.replace(raw)
+        data = raw.read_bytes()
+        tokens, labels = wikiann_to_iob2(data)
+        target = write_iob2(dest_dir / KAZNERD_SPLITS[split], tokens, labels)
+        entities: dict[str, int] = {}
+        for tag in (tag for sentence in labels for tag in sentence if tag.startswith("B-")):
+            entities[tag[2:]] = entities.get(tag[2:], 0) + 1
+        splits[split] = {
+            "parquet": raw.name,
+            "parquet_bytes": len(data),
+            "parquet_sha256": _sha256(data),
+            "iob2": target.name,
+            "iob2_sha256": _sha256(target.read_bytes()),
+            "sentences": len(tokens),
+            "tokens": sum(len(s) for s in tokens),
+            "entities": dict(sorted(entities.items())),
+        }
+    manifest["splits"] = splits
+    text = json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+    (dest_dir / "manifest.json").write_text(text, encoding="utf-8", newline="\n")
+    return manifest
