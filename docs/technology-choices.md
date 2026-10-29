@@ -147,9 +147,33 @@ better than Git Flow's long-lived `develop` and `release` branches (Lecture 5).
 - `release.yml` runs on tags. This is continuous **delivery**: building and publishing
   are automated, but releasing is a deliberate tag.
 
-**Rejected:** Jenkins (server administration for one person is pure overhead), GitLab CI
-(it would mean leaving GitHub, where the repository, issues and branch protection live),
-Travis CI (open-source builds now depend on limited credits).
+**Rejected:** GitLab CI (it would mean leaving GitHub, where the repository, issues and branch
+protection live) and Travis CI (open-source builds now depend on limited credits). Jenkins was
+first rejected as the main CI, because administering a server is overhead for one person.
+
+**Added later (#54): Jenkins as a second, self-hosted pipeline.** GitHub Actions remains the
+merge gate. Jenkins runs on the laptop next to Docker Desktop for two reasons:
+- it builds every commit into a container image in the local engine;
+- it deploys that image to a local Kubernetes test namespace, which hosted runners cannot
+  reach.
+
+The administration cost that led to the first rejection is contained by defining the server
+as code: `ci/jenkins/compose.yaml`, a pinned controller image and plugin list, and
+Configuration-as-Code. Recreating Jenkins is therefore one command, not a manual setup.
+
+## 9a. Containers and deployment: Docker + Kubernetes (Docker Desktop)
+
+| Criterion | **Docker (multi-stage) + Kubernetes Job** | Conda environment file only | Singularity / Apptainer |
+|---|---|---|---|
+| Performance | + cached torch and dependency layers; code-only rebuilds in seconds | + | + |
+| Scalability | ++ the same image runs in CI, on a laptop and on a cluster | − one machine at a time | ++ on HPC clusters |
+| Community support | ++ standard for CI and Kubernetes | + | + strong in HPC, weak elsewhere |
+| Compatibility | ++ Docker Desktop on Windows includes a Kubernetes cluster; GitHub runners have Docker | + | −− no Windows support |
+
+**Decision:** a CPU-only `Dockerfile` with `test` and `runtime` stages (#14). The test
+deployment is a Kubernetes **Job**, not a Deployment, because kazner is a batch CLI, not a
+service (#54). Apptainer is noted for a future university HPC cluster: it can run the same
+Docker image.
 
 ## 10. Data distribution: download script with checksums
 

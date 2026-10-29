@@ -640,3 +640,37 @@ it is not used as evidence about B2.
 - The image is still 2.4 GB on disk: CPU torch, and scipy, which `seqeval` pulls in through
   scikit-learn. It is not slimmed further, because the evaluator must stay the pinned
   `seqeval==1.2.2`.
+
+## 2026-10-29 — Jenkins in a container next to Docker Desktop (#54)
+
+**Problem.** Running Jenkins as a container that drives the host's Docker engine (the socket is
+mounted) raised five issues:
+- **Bind mounts point at the host, not at the workspace.** A `-v $PWD/reports:/out` from a
+  build step would mount a path on the Docker VM, not the Jenkins workspace, so the JUnit and
+  coverage files would never appear.
+- **No webhook.** GitHub cannot reach a Jenkins bound to `127.0.0.1`.
+- **Too many branches.** The first branch scan found 25 old branches with a `Jenkinsfile`
+  missing or present. Building every new head on the first scan would have started dozens of
+  builds on a laptop.
+- **Invalid container name.** The first real build failed at the test stage: the container
+  was named from `BUILD_TAG`, which contains the branch name URL-encoded
+  (`jenkins-kazner-ci%2F54-jenkins-1`), and Docker rejects `%`.
+- **Socket permissions.** The socket is owned by root; running the controller as root would
+  have been the quick fix.
+
+**Resolution.**
+- The test container is run without a mount. The reports are copied out of the stopped
+  container with `docker cp`, and the container is named from the commit SHA and the build
+  number.
+- The job polls the repository every 2 minutes. The `skipInitialBuildOnFirstBranchIndexing`
+  strategy prevents the build storm. Its cost: the first discovery of a new branch is not
+  built either, so that first build is started by hand. The fix commit itself was picked up by
+  polling and built automatically (build #2, 89 s with cached layers, 332 tests, 97% line
+  coverage).
+- The controller joins group 0 (`group_add`) and keeps the unprivileged `jenkins` user. This is
+  still root-equivalent on the Docker VM, and `docs/ci-jenkins.md` says so.
+- The Kubernetes credential is a ServiceAccount token limited by a Role to `kazner-test`.
+  `kubectl auth can-i` gives `yes` for Jobs there and `no` for the `default` namespace and for
+  Secrets. Docker Desktop's kubeadm cluster uses the same engine as `docker build`, so the Job
+  starts the image built by the pipeline without a registry. The kind provisioning mode would
+  need `kind load`.
