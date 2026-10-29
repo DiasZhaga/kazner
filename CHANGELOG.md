@@ -88,6 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by training and by the fragmentation analysis); `kazner.aggregate.config_field` is public (#33).
 
 ### Fixed
+- Jenkins built a branch only after it had been built once by hand; the branch-build strategy
+  is removed, and every branch with a `Jenkinsfile` is built on discovery and on each commit (#57).
 - Byte-level BPE tokenizers (RoBERTa family) silently received pre-split words without their
   leading-space marker (KazRoBERTa: 1.569 instead of 1.205 subwords per word on KazNERD
   validation). New `model.add_prefix_space` config key and `kazner fertility
