@@ -1,0 +1,35 @@
+# KazNERD's 25 entity types -> WikiANN's PER, LOC and ORG (#51). Every KazNERD type must be
+# listed; a type missing here or a target outside target_types is an error. The B-/I- prefix
+# is kept, so adjacent entities that map to the same type stay separate. FACILITY (buildings,
+# airports, roads) has no clear WikiANN counterpart and maps to O; the sensitivity variant
+# kaznerd_to_wikiann_facility_loc.yaml maps it to LOC instead.
+source: KazNERD
+target: WikiANN
+target_types: [PER, LOC, ORG]
+mapping:
+  PERSON: PER
+  GPE: LOC            # WikiANN has no GPE: countries, regions and cities are LOC
+  LOCATION: LOC
+  ORGANISATION: ORG
+  FACILITY: O
+  # Outside WikiANN's label space:
+  NORP: O
+  EVENT: O
+  PROJECT: O
+  PRODUCT: O
+  ART: O
+  LAW: O
+  LANGUAGE: O
+  DISEASE: O
+  ADAGE: O
+  NON_HUMAN: O
+  MISCELLANEOUS: O
+  POSITION: O
+  CONTACT: O
+  DATE: O
+  TIME: O
+  MONEY: O
+  PERCENTAGE: O
+  QUANTITY: O
+  ORDINAL: O
+  CARDINAL: O
