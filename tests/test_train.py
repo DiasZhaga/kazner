@@ -137,6 +137,57 @@ def test_model_identity_of_a_local_directory(tmp_path):
     }
 
 
+def test_extra_test_sets_are_predicted_after_training(tiny_tokenizer, tmp_path):
+    """#51: offline, on a tiny local BERT; the extra set keeps its own gold labels."""
+    torch = pytest.importorskip("torch")
+    from transformers import BertConfig, BertModel
+
+    from kazner.config import load_config
+    from kazner.data import build_label2id
+    from kazner.train import run_experiment
+
+    model_dir = tmp_path / "models" / "tiny"
+    torch.manual_seed(0)
+    config = BertConfig(
+        vocab_size=len(tiny_tokenizer), hidden_size=16, num_hidden_layers=1,
+        num_attention_heads=2, intermediate_size=32, max_position_embeddings=32,
+    )  # fmt: skip
+    BertModel(config).save_pretrained(model_dir)
+    tiny_tokenizer.save_pretrained(model_dir)
+    (tmp_path / "wiki.txt").write_text(
+        "Айгүл B-PER\nАстанада B-LOC\nтұрады O\n\nМарат B-PER\nСейітов I-PER\nзауытта B-ORG\n",
+        encoding="utf-8",
+    )
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    raw = {
+        "name": "extra",
+        "data": {"dir": str(TINY)},
+        "model": {"name": "../models/tiny", "max_len": 16},
+        "training": {"epochs": 1, "train_batch_size": 2, "eval_batch_size": 2, "fp16": "false"},
+        "seeds": [1],
+        "output_root": "../runs",
+        "extra_tests": [{"name": "wiki", "path": "../wiki.txt"}],
+    }
+    (configs / "extra.yaml").write_text(json.dumps(raw), encoding="utf-8")
+
+    (result,) = run_experiment(load_config(configs / "extra.yaml"))
+
+    run_dir = tmp_path / "runs" / result["run_id"]
+    extra = read_predictions(run_dir / "predictions_wiki.csv")
+    assert extra.words == [["Айгүл", "Астанада", "тұрады"], ["Марат", "Сейітов", "зауытта"]]
+    assert extra.gold == [["B-PER", "B-LOC", "O"], ["B-PER", "I-PER", "B-ORG"]]
+    kaznerd_labels = set(build_label2id(read_splits(TINY)["train"][1])[0])
+    assert {tag for sentence in extra.pred for tag in sentence} <= kaznerd_labels
+    assert result["metrics"]["extra_tests"] == {
+        "wiki": {"sentences": 2, "words": 6, "truncated_words": 0}
+    }
+    written = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    assert written["extra_tests"] == [{"name": "wiki", "path": "../wiki.txt"}]
+    assert len(written["extra_tests_fingerprint"]) == 64
+    assert (run_dir / "predictions.csv").is_file()  # the KazNERD test is still written
+
+
 @pytest.mark.smoke
 def test_end_to_end_training_on_a_tiny_model(tmp_path, capsys):
     from kazner.cli import main

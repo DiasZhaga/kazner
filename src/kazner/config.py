@@ -111,6 +111,18 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
+class ExtraTestConfig:
+    """A further test set that every run also predicts after training (#51).
+
+    An IOB2 file, possibly from another dataset with other labels: its labels are written as
+    ``gold`` and the model's own labels as ``pred`` in ``predictions_<name>.csv``.
+    """
+
+    name: str
+    path: str
+
+
+@dataclass(frozen=True)
 class RunConfig:
     """One training run: an experiment with a single seed."""
 
@@ -121,6 +133,7 @@ class RunConfig:
     training: TrainingConfig
     seed: int
     output_root: str = "runs"
+    extra_tests: tuple[ExtraTestConfig, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return _to_plain(self)
@@ -132,6 +145,11 @@ class RunConfig:
         d["data"].pop("dir")  # a location, not content: the data fingerprint is hashed instead
         if is_local_model(self.model.name):
             d["model"].pop("name")  # likewise: the model fingerprint is hashed instead
+        if self.extra_tests:
+            for test in d["extra_tests"]:
+                test.pop("path")  # the files' content is hashed instead (extra_tests_fingerprint)
+        else:
+            d.pop("extra_tests")  # runs without extra test sets keep their former payload
         return d
 
 
@@ -144,6 +162,7 @@ class ExperimentConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     seeds: tuple[int, ...] = (42,)
     output_root: str = "runs"
+    extra_tests: tuple[ExtraTestConfig, ...] = ()
     #: Directory of the YAML file; relative paths are resolved against it. Not hashed.
     base_dir: Path = field(default=Path("."), compare=False, repr=False)
 
@@ -158,6 +177,7 @@ class ExperimentConfig:
                 training=self.training,
                 seed=seed,
                 output_root=self.output_root,
+                extra_tests=self.extra_tests,
             )
             for seed in self.seeds
         ]
@@ -187,6 +207,7 @@ def _to_plain(obj: Any) -> Any:
 
 # --------------------------------------------------------------------------- loading
 
+EXTRA_TEST_NAME = re.compile(r"[A-Za-z0-9_-]+")
 _FLOAT_RE = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
 
 
@@ -202,6 +223,8 @@ def _coerce(value: Any, annotation: Any, key: str) -> Any:
     if origin is tuple:
         if not isinstance(value, list | tuple) or not value:
             raise ConfigError(f"{key}: expected a non-empty list, got {value!r}")
+        if dataclasses.is_dataclass(args[0]):
+            return tuple(_build(args[0], v, f"{key}[{i}].") for i, v in enumerate(value))
         return tuple(_coerce(v, args[0], f"{key}[{i}]") for i, v in enumerate(value))
     if annotation is bool:
         if not isinstance(value, bool):
@@ -284,6 +307,14 @@ def _validate(cfg: ExperimentConfig) -> None:
     check(t.weight_decay >= 0, "training.weight_decay", "must not be negative")
     check(t.fp16 in ("auto", "true", "false"), "training.fp16", "must be auto, true or false")
     check(len(set(cfg.seeds)) == len(cfg.seeds), "seeds", "must not contain duplicates")
+    names = [test.name for test in cfg.extra_tests]
+    check(len(set(names)) == len(names), "extra_tests", "names must be unique")
+    for i, name in enumerate(names):
+        check(
+            EXTRA_TEST_NAME.fullmatch(name) is not None,
+            f"extra_tests[{i}].name",
+            "may only contain letters, digits, '_' and '-' (it names a file)",
+        )
 
 
 def parse_config(raw: Any, base_dir: Path = Path(".")) -> ExperimentConfig:
@@ -397,13 +428,35 @@ def model_fingerprint(model_dir: str | Path) -> str:
     return digest.hexdigest()
 
 
-def run_id(run: RunConfig, code_ref: str, data_ref: str = "", model_ref: str = "") -> str:
+def extra_tests_fingerprint(cfg: ExperimentConfig) -> str:
+    """SHA-256 over the extra test files' content by name (CRLF normalised); ``""`` if none."""
+    if not cfg.extra_tests:
+        return ""
+    digest = hashlib.sha256()
+    for test in sorted(cfg.extra_tests, key=lambda t: t.name):
+        path = cfg.resolve(test.path)
+        if not path.is_file():
+            raise ConfigError(f"extra_tests: {test.name}: file {path} does not exist")
+        content = path.read_bytes().replace(b"\r\n", b"\n")
+        digest.update(test.name.encode("utf-8") + b"\0" + hashlib.sha256(content).digest())
+    return digest.hexdigest()
+
+
+def run_id(
+    run: RunConfig, code_ref: str, data_ref: str = "", model_ref: str = "", extra_ref: str = ""
+) -> str:
     """First 12 hex chars of sha256(hashed config + code reference + data and model
-    fingerprints); ``model_ref`` is empty for Hub models, which are hashed by name."""
-    payload = canonical_json(
-        {"config": run.hashable_dict(), "code": code_ref, "data": data_ref, "model": model_ref}
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:RUN_ID_LENGTH]
+    fingerprints); ``model_ref`` is empty for Hub models, which are hashed by name.
+    ``extra_ref`` (extra test sets) enters only when set, so other runs keep their IDs."""
+    payload = {
+        "config": run.hashable_dict(),
+        "code": code_ref,
+        "data": data_ref,
+        "model": model_ref,
+    }
+    if extra_ref:
+        payload["extra_tests"] = extra_ref
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:RUN_ID_LENGTH]
 
 
 # --------------------------------------------------------------------------- environment
@@ -447,6 +500,7 @@ def write_run_files(
     env: dict[str, Any],
     data_ref: str = "",
     model_ref: str = "",
+    extra_ref: str = "",
 ) -> None:
     """Write ``config.json`` (resolved run config) and ``environment.json``."""
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -454,8 +508,11 @@ def write_run_files(
         "run_id": rid,
         "data_fingerprint": data_ref,
         "model_fingerprint": model_ref or None,
+        **({"extra_tests_fingerprint": extra_ref} if extra_ref else {}),
         **run.to_dict(),
     }
+    if not run.extra_tests:
+        config.pop("extra_tests")
     for name, payload in (("config.json", config), ("environment.json", env)):
         text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         (run_dir / name).write_text(text, encoding="utf-8", newline="\n")
