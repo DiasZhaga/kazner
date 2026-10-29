@@ -68,6 +68,23 @@ To install a released version instead, download the wheel from
 [Releases](https://github.com/DiasZhaga/kazner/releases) and run `pip install kazner-*.whl`.
 v0.1.0 needs no GPU: evaluation and fertility run on CPU.
 
+**Docker (CPU)**
+
+The `Dockerfile` has a `test` stage that runs the offline test suite and a `runtime` stage
+whose entry point is `kazner`:
+
+```bash
+docker build --target test -t kazner:test . && docker run --rm kazner:test   # offline tests
+docker build -t kazner .                                                      # runtime image
+docker run --rm kazner evaluate --predictions /opt/kazner/examples/contract_example.csv
+docker run --rm -v "$PWD/runs:/work/runs:ro" kazner evaluate --predictions runs/<run_id>/predictions.csv
+```
+
+The image runs as a non-root user (uid 10001) in `/work`; mount your files there read-only, or
+add `--user "$(id -u):$(id -g)"` when the command writes into the mounted directory.
+It contains CPU-only PyTorch, so it is meant for evaluation, analysis and the tests, not for
+GPU training.
+
 ## Quick start
 
 ```bash

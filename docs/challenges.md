@@ -620,3 +620,23 @@ from the package, not from an ad hoc script. The breakdown is labelled as explor
 it was designed after the results were seen. On `other_unique`, mBERT and XLM-R are level.
 The pieces-per-word table on the whole test measured a template rather than fragmentation, so
 it is not used as evidence about B2.
+
+## 2026-10-29 — Container image: dependency caching and size (#14)
+
+**Problem.** Three things made a naive `Dockerfile` slow or wrong:
+- `pip install .` from PyPI on Linux pulls the CUDA build of torch (several GB) into an image
+  that only ever runs on CPU;
+- copying the sources before installing the dependencies re-installs torch and every pinned
+  dependency on each code change: about five minutes per build on the laptop;
+- the run-ID code and its tests call `git`, which the slim Python image does not have.
+
+**Resolution.**
+- torch is installed first from the CPU wheel index, as in the GitHub Actions jobs.
+- The pinned dependencies are installed from `pyproject.toml` through a stub package (an empty
+  `src/kazner/__init__.py`) that is uninstalled again. Their layer changes only when the
+  dependency list changes, so a code-only rebuild reuses the torch and dependency layers.
+- `git` is installed in the `test` stage only. The `runtime` stage gets the built wheel, no
+  sources, no tests and no dev tools, and runs as a non-root user.
+- The image is still 2.4 GB on disk: CPU torch, and scipy, which `seqeval` pulls in through
+  scikit-learn. It is not slimmed further, because the evaluator must stay the pinned
+  `seqeval==1.2.2`.
