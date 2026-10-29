@@ -596,3 +596,27 @@ because mBERT seed 42 has to reproduce the pilot's F1 bit for bit.
   type. A forgotten type would otherwise vanish into `O` and quietly change the scores.
 - The conversion reads WikiANN's tag names from the parquet metadata and stops if they differ
   from the expected order, instead of assuming the ids.
+
+## 2026-10-29 — A third of the WikiANN test is not running text
+
+**Problem.** In the first transfer results, mBERT's recall on entities of one mBERT piece per
+word was 0.24, while XLM-R and KazRoBERTa reached about 0.8 on the same 154 entities. On
+KazNERD the direction had been the opposite. A look at the entities showed that 83 of the 154
+were the same word, `Ресейдегі` ("in Russia"), from Wikipedia stubs of the form "X is a river
+in Russia". In these stubs the river's name is `O` and only the linked country word is LOC.
+More generally:
+- 176 of the 1,000 test sentences are redirect lines (`АЙДАУ X`), and 174 are article first
+  lines;
+- 86 of the remaining sentences repeat an earlier one, one of them 33 times;
+- the model ranking on the whole test came from these lines.
+
+**Resolution.** `kazner transfer` now also reports the scores by kind of sentence:
+- `redirect` and `bold_title` are recognised by their first word;
+- `other` is everything else;
+- `other_unique` is `other` with every distinct sentence counted once.
+
+The rule is two lines of code and is tested. The numbers in `docs/transfer.md` therefore come
+from the package, not from an ad hoc script. The breakdown is labelled as exploratory, because
+it was designed after the results were seen. On `other_unique`, mBERT and XLM-R are level.
+The pieces-per-word table on the whole test measured a template rather than fragmentation, so
+it is not used as evidence about B2.

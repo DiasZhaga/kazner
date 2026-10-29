@@ -432,7 +432,9 @@ test and written as `predictions_<name>.csv`, with the file's own gold labels. T
 enters the run ID. `kazner transfer` maps KazNERD's 25 types onto the target's types through a
 mapping file in which every type must be listed, and reports three scores per model: KazNERD
 with all types, KazNERD mapped, and the extra set mapped (with a sentence-bootstrap CI). The
-first comparison isolates the label space, the second the domain. Data, mapping and results:
+first comparison isolates the label space, the second the domain. The extra set's scores
+are also given by kind of sentence, because WikiANN `kk` mixes running text with Wikipedia
+redirect lines and article first lines. Data, mapping and results:
 [docs/transfer.md](docs/transfer.md).
 
 ## Reproduction results

@@ -63,7 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parquet files converted to IOB2, manifest); `kazner transfer` (`kazner.transfer`) with an
   explicit, validated KazNERD -> WikiANN label mapping in `configs/mappings/`: KazNERD with all
   types, KazNERD mapped and WikiANN mapped, a sentence-bootstrap CI and recall by pieces per
-  word; run configs in `configs/transfer/`; `docs/transfer.md`.
+  word, also by kind of sentence (redirect lines, article first lines, the rest with and
+  without repeats); run configs in `configs/transfer/`; `docs/transfer.md` with the results
+  of nine runs (three models, seeds 42-44).
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
