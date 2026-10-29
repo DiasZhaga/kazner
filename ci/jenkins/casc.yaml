@@ -49,11 +49,8 @@ jobs:
                 traits {
                   gitBranchDiscovery()
                 }
+                // Only branches that contain a Jenkinsfile are built; the old ones have none.
               }
-            }
-            buildStrategies {
-              // The first scan finds ~30 old branches: do not build them all at once.
-              skipInitialBuildOnFirstBranchIndexing()
             }
           }
         }
