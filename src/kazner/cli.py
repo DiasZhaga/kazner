@@ -124,6 +124,39 @@ def _cmd_fragmentation(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_transfer(args: argparse.Namespace) -> int:
+    from kazner.fragmentation import piece_counter
+    from kazner.transfer import (
+        analyse,
+        format_report,
+        load_mapping,
+        load_transfer_run,
+        write_outputs,
+    )
+
+    pieces_of, info = None, None
+    if args.tokenizer.lower() != "none":
+        from transformers import AutoTokenizer
+
+        kwargs = {} if args.revision is None else {"revision": args.revision}
+        pieces_of = piece_counter(AutoTokenizer.from_pretrained(args.tokenizer, **kwargs))
+        info = {"name": args.tokenizer, "revision": args.revision}
+    report = analyse(
+        [load_transfer_run(d, args.extra) for d in args.runs],
+        load_mapping(args.mapping),
+        args.extra,
+        by=[key.strip() for key in args.by.split(",") if key.strip()],
+        pieces_of=pieces_of,
+        bootstrap=args.bootstrap,
+        seed=args.seed,
+        tokenizer_info=info,
+    )
+    if args.out is not None:
+        write_outputs(args.out, report)
+    print(format_report(report))
+    return 0
+
+
 def _cmd_extend_vocab(args: argparse.Namespace) -> int:
     from kazner.vocab import extend_vocabulary, read_pieces
 
@@ -309,6 +342,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="use these pieces (e.g. a saved new_pieces.txt) instead of learning candidates",
     )
     ext.set_defaults(func=_cmd_extend_vocab)
+
+    transfer = commands.add_parser(
+        "transfer",
+        help="score KazNERD-trained runs on an extra test set through a label mapping (#51)",
+        description="KazNERD test with all types, KazNERD test mapped, and the extra test set "
+        "mapped: entity-level P/R/F1 per group of runs, a sentence-bootstrap CI for the extra "
+        "set, and its recall by pieces per word under a reference tokenizer.",
+    )
+    transfer.add_argument(
+        "--runs", type=Path, nargs="+", required=True, help="run directories with extra predictions"
+    )
+    transfer.add_argument("--mapping", type=Path, required=True, help="label mapping YAML")
+    transfer.add_argument(
+        "--extra", required=True, help="name of the extra test set (predictions_<name>.csv)"
+    )
+    transfer.add_argument(
+        "--by", default="model", help="comma-separated config fields to group runs by"
+    )
+    transfer.add_argument(
+        "--tokenizer",
+        default="bert-base-multilingual-cased",
+        help="reference tokenizer for pieces per word (name or path; 'none' to skip)",
+    )
+    transfer.add_argument("--revision", help="Hub revision of the reference tokenizer")
+    transfer.add_argument("--bootstrap", type=int, default=1000, help="bootstrap replicates")
+    transfer.add_argument("--seed", type=int, default=0, help="bootstrap random seed")
+    transfer.add_argument("--out", type=Path, help="write transfer.json and transfer.csv here")
+    transfer.set_defaults(func=_cmd_transfer)
     return parser
 
 

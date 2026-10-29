@@ -566,3 +566,57 @@ three fine-tuning seeds per arm could only detect about 2 points.
   silently using another model. The same mechanism means that any change under `src/kazner`
   that reaches `main` before the freeze changes the IDs. The preregistration must therefore be
   frozen before other code is merged, or the IDs must be recomputed.
+
+## 2026-10-28 — A pull request closed the issue it said it would not close
+
+**Problem.** PR #52 froze the preregistration of #37 but was not meant to close the issue: the
+runs and the analysis come later. Its description said "The PR does not close #37". GitHub
+looks for a closing keyword followed by an issue number and ignores the negation, so merging
+the PR closed #37.
+
+**Resolution.** #37 was reopened at once; its board item had no status to repair. Pull
+request texts that only refer to an issue now say "Refs #N" and keep every closing keyword
+(close, fix, resolve) away from the number. Before a merge, `gh pr view <n> --json
+closingIssuesReferences` shows which issues will be closed.
+
+## 2026-10-29 — Scoring the models on another dataset without retraining for it
+
+**Problem.** WikiANN `kk` is labelled with PER, LOC and ORG, while the models of #32 predict
+KazNERD's 25 types. The #32 runs kept only their predictions, so the models had to be
+retrained to predict WikiANN. A new config key must not change what the training computes,
+because mBERT seed 42 has to reproduce the pilot's F1 bit for bit.
+
+**Decisions.**
+- An extra test set is predicted after the KazNERD test, with its own gold labels written
+  unchanged. Mapping happens only in the analysis, so one set of predictions serves every
+  mapping, including the sensitivity variant for FACILITY.
+- The extra file's content enters the run ID only when a config has extra test sets. Runs
+  without them keep their former hash payload.
+- Every KazNERD type must be listed in the mapping, and the analysis stops at an unlisted
+  type. A forgotten type would otherwise vanish into `O` and quietly change the scores.
+- The conversion reads WikiANN's tag names from the parquet metadata and stops if they differ
+  from the expected order, instead of assuming the ids.
+
+## 2026-10-29 — A third of the WikiANN test is not running text
+
+**Problem.** In the first transfer results, mBERT's recall on entities of one mBERT piece per
+word was 0.24, while XLM-R and KazRoBERTa reached about 0.8 on the same 154 entities. On
+KazNERD the direction had been the opposite. A look at the entities showed that 83 of the 154
+were the same word, `Ресейдегі` ("in Russia"), from Wikipedia stubs of the form "X is a river
+in Russia". In these stubs the river's name is `O` and only the linked country word is LOC.
+More generally:
+- 176 of the 1,000 test sentences are redirect lines (`АЙДАУ X`), and 174 are article first
+  lines;
+- 86 of the remaining sentences repeat an earlier one, one of them 33 times;
+- the model ranking on the whole test came from these lines.
+
+**Resolution.** `kazner transfer` now also reports the scores by kind of sentence:
+- `redirect` and `bold_title` are recognised by their first word;
+- `other` is everything else;
+- `other_unique` is `other` with every distinct sentence counted once.
+
+The rule is two lines of code and is tested. The numbers in `docs/transfer.md` therefore come
+from the package, not from an ad hoc script. The breakdown is labelled as exploratory, because
+it was designed after the results were seen. On `other_unique`, mBERT and XLM-R are level.
+The pieces-per-word table on the whole test measured a template rather than fragmentation, so
+it is not used as evidence about B2.

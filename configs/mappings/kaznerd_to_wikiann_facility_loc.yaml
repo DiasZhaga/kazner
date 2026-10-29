@@ -1,0 +1,31 @@
+# Sensitivity variant of kaznerd_to_wikiann.yaml (#51): identical except FACILITY -> LOC.
+source: KazNERD
+target: WikiANN
+target_types: [PER, LOC, ORG]
+mapping:
+  PERSON: PER
+  GPE: LOC            # WikiANN has no GPE: countries, regions and cities are LOC
+  LOCATION: LOC
+  ORGANISATION: ORG
+  FACILITY: LOC
+  # Outside WikiANN's label space:
+  NORP: O
+  EVENT: O
+  PROJECT: O
+  PRODUCT: O
+  ART: O
+  LAW: O
+  LANGUAGE: O
+  DISEASE: O
+  ADAGE: O
+  NON_HUMAN: O
+  MISCELLANEOUS: O
+  POSITION: O
+  CONTACT: O
+  DATE: O
+  TIME: O
+  MONEY: O
+  PERCENTAGE: O
+  QUANTITY: O
+  ORDINAL: O
+  CARDINAL: O

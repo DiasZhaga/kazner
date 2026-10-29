@@ -418,6 +418,25 @@ regression (odds ratio per extra piece) with a bootstrap over test sentences. Th
 so runs of different models are scored on the same entities. Method and the mBERT results
 (experiment B2): [docs/fragmentation.md](docs/fragmentation.md).
 
+## Transfer to another dataset (#51)
+
+```bash
+python scripts/download_wikiann_kk.py                    # WikiANN kk -> data/wikiann_kk/
+kazner train --config configs/transfer/mbert_wikiann.yaml
+kazner transfer --mapping configs/mappings/kaznerd_to_wikiann.yaml --extra wikiann_kk \
+  --runs runs/<id> ... --out results/51
+```
+
+A config's `extra_tests` (a name and an IOB2 file) are predicted by every run after the KazNERD
+test and written as `predictions_<name>.csv`, with the file's own gold labels. Their content
+enters the run ID. `kazner transfer` maps KazNERD's 25 types onto the target's types through a
+mapping file in which every type must be listed, and reports three scores per model: KazNERD
+with all types, KazNERD mapped, and the extra set mapped (with a sentence-bootstrap CI). The
+first comparison isolates the label space, the second the domain. The extra set's scores
+are also given by kind of sentence, because WikiANN `kk` mixes running text with Wikipedia
+redirect lines and article first lines. Data, mapping and results:
+[docs/transfer.md](docs/transfer.md).
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -474,19 +493,20 @@ src/kazner/
   vocab.py         kazner extend-vocab: WordPiece vocabulary extension with FVT
   pretrain.py      kazner pretrain: continued masked-LM training with shared chunks and masks
   compare.py       kazner compare: paired bootstrap comparison of two arms (#37)
+  transfer.py      kazner transfer: scores on another dataset through a label mapping (#51)
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
   fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
   cli.py           kazner evaluate | fertility | train | aggregate | fragmentation |
-                   extend-vocab | pretrain | compare
-scripts/           download_kaznerd.py, download_kk_corpus.py, convert_pilot_predictions.py,
-                   reproduce_pilot_metrics.py, release_tools.py
+                   extend-vocab | pretrain | compare | transfer
+scripts/           download_kaznerd.py, download_kk_corpus.py, download_wikiann_kk.py,
+                   convert_pilot_predictions.py, reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
 docs/              technology-choices.md, traceability.md, reproduction.md, baselines.md,
                    fragmentation.md, vocabulary.md, preregistration-vocab.md,
-                   causal-test-runbook.md, challenges.md
+                   causal-test-runbook.md, transfer.md, challenges.md
 .github/workflows/ ci.yml, release.yml
 ```
 
@@ -500,6 +520,7 @@ Documentation:
 - [vocabulary extension: size report](docs/vocabulary.md);
 - [preregistration of the causal vocabulary test (#37)](docs/preregistration-vocab.md) and
   [its runbook](docs/causal-test-runbook.md);
+- [transfer to WikiANN with a label mapping](docs/transfer.md);
 - [decisions and problems log](docs/challenges.md);
 - [changelog](CHANGELOG.md).
 

@@ -1,0 +1,31 @@
+# WikiANN kk transfer (#51): KazRoBERTa at the rate selected in #32
+# (configs/baselines/kazroberta_best.yaml), retrained with the same settings and seeds; after
+# training, every run also predicts the WikiANN kk test split (predictions_wikiann_kk.csv).
+# Data: python scripts/download_wikiann_kk.py. Scoring: kazner transfer (docs/transfer.md).
+name: transfer_kazroberta_wikiann
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: kz-transformers/kaz-roberta-conversational
+  revision: "43077c2fd0a163487ed468b5ec3b8750686a5888"  # pinned Hub commit (#31)
+  add_prefix_space: true  # byte-level BPE (#30)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 1.0e-4
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../../runs
+extra_tests:
+  - name: wikiann_kk
+    path: ../../data/wikiann_kk/IOB2_test.txt

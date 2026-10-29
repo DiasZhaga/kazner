@@ -1,0 +1,30 @@
+# WikiANN kk transfer (#51): mBERT at the rate selected in #32
+# (configs/baselines/mbert_best.yaml), retrained with the same settings and seeds; after
+# training, every run also predicts the WikiANN kk test split (predictions_wikiann_kk.csv).
+# Data: python scripts/download_wikiann_kk.py. Scoring: kazner transfer (docs/transfer.md).
+name: transfer_mbert_wikiann
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.10
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  revision: "3f076fdb1ab68d5b2880cb87a0886f315b8146f8"  # pinned Hub commit (#31)
+  max_len: 128
+method:
+  name: full
+training:
+  learning_rate: 5.0e-5
+  epochs: 3
+  train_batch_size: 4
+  eval_batch_size: 8
+  grad_accumulation: 2
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44]
+output_root: ../../runs
+extra_tests:
+  - name: wikiann_kk
+    path: ../../data/wikiann_kk/IOB2_test.txt

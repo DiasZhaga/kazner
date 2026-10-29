@@ -7,9 +7,11 @@ import pytest
 from kazner.config import (
     CodeState,
     ConfigError,
+    ExtraTestConfig,
     code_state,
     data_fingerprint,
     environment,
+    extra_tests_fingerprint,
     is_local_model,
     load_config,
     model_fingerprint,
@@ -55,8 +57,8 @@ def test_pilot_config_reproduces_the_pilot_settings():
 
 
 EXPERIMENT_CONFIGS = sorted(
-    p for p in (ROOT / "configs").rglob("*.yaml") if p.parent.name != "pretrain"
-)  # configs/pretrain/ holds pre-training configs, tested in test_pretrain.py
+    p for p in (ROOT / "configs").rglob("*.yaml") if p.parent.name not in ("pretrain", "mappings")
+)  # pre-training configs are tested in test_pretrain.py, label mappings in test_transfer.py
 
 
 @pytest.mark.parametrize("path", EXPERIMENT_CONFIGS, ids=lambda p: p.stem)
@@ -93,6 +95,62 @@ def test_causal_test_arms_differ_only_in_the_start_model():
     for arm, location in start.items():
         assert configs[f"{arm}_lora"].model_location() == location
         assert Path(location).parent == (ROOT / "models").resolve()  # pretrain output_root
+
+
+def test_transfer_configs_repeat_the_selected_baselines_with_wikiann():
+    """#51: the WikiANN runs retrain the #32 selections unchanged and add one extra test set."""
+    for key in ("mbert", "xlmr", "kazroberta"):
+        t = load_config(ROOT / "configs" / "transfer" / f"{key}_wikiann.yaml")
+        b = load_config(ROOT / "configs" / "baselines" / f"{key}_best.yaml")
+        assert (t.data, t.model, t.method, t.training) == (b.data, b.model, b.method, b.training)
+        assert (t.seeds, t.output_root) == (b.seeds, b.output_root)
+        (extra,) = t.extra_tests
+        assert extra.name == "wikiann_kk"
+        assert t.resolve(extra.path) == (ROOT / "data" / "wikiann_kk" / "IOB2_test.txt").resolve()
+
+
+def test_extra_tests_are_parsed_and_validated():
+    c = parse_config({**MINIMAL, "extra_tests": [{"name": "wikiann_kk", "path": "w/test.txt"}]})
+    assert c.extra_tests == (ExtraTestConfig("wikiann_kk", "w/test.txt"),)
+    assert c.expand()[0].extra_tests == c.extra_tests
+    with pytest.raises(ConfigError, match=r"extra_tests\[0\]\.file: unknown key"):
+        parse_config({**MINIMAL, "extra_tests": [{"name": "a", "file": "x"}]})
+    with pytest.raises(ConfigError, match=r"extra_tests\[0\]\.path: required key is missing"):
+        parse_config({**MINIMAL, "extra_tests": [{"name": "a"}]})
+    two = [{"name": "a", "path": "x"}, {"name": "a", "path": "y"}]
+    with pytest.raises(ConfigError, match="names must be unique"):
+        parse_config({**MINIMAL, "extra_tests": two})
+    with pytest.raises(ConfigError, match=r"extra_tests\[0\]\.name: may only contain"):
+        parse_config({**MINIMAL, "extra_tests": [{"name": "wiki ann", "path": "x"}]})
+
+
+def test_extra_tests_enter_the_run_id_by_content_not_by_path(tmp_path):
+    plain = cfg().expand()[0]
+    assert "extra_tests" not in plain.hashable_dict()  # runs without them keep their payload
+    assert run_id(plain, "code", "data") == run_id(plain, "code", "data", extra_ref="")
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "test.txt").write_bytes(b"x B-PER\n")
+
+    def with_extra(folder):
+        raw = {**MINIMAL, "extra_tests": [{"name": "w", "path": f"{folder}/test.txt"}]}
+        return parse_config(raw, base_dir=tmp_path)
+
+    a, b = with_extra("a"), with_extra("b")
+    assert a.expand()[0].hashable_dict() == {
+        **plain.hashable_dict(),
+        "extra_tests": [{"name": "w"}],
+    }
+    assert extra_tests_fingerprint(a) == extra_tests_fingerprint(b)  # same content elsewhere
+    ref = extra_tests_fingerprint(a)
+    assert run_id(a.expand()[0], "code", "data", extra_ref=ref) != run_id(plain, "code", "data")
+    (tmp_path / "b" / "test.txt").write_bytes(b"x B-PER\r\n")
+    assert extra_tests_fingerprint(b) == ref  # line endings do not matter
+    (tmp_path / "b" / "test.txt").write_bytes(b"x B-LOC\n")
+    assert extra_tests_fingerprint(b) != ref
+    assert extra_tests_fingerprint(cfg()) == ""
+    with pytest.raises(ConfigError, match="does not exist"):
+        extra_tests_fingerprint(with_extra("missing"))
 
 
 def test_yaml_scientific_notation_without_dot_is_a_number(tmp_path):

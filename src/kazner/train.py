@@ -3,8 +3,9 @@
 The Trainer wiring follows the pilot (``ner-project/src/run_peft_comparison.py``:
 ``build_training_arguments`` and ``run_one_experiment``). Each run writes, into
 ``<output_root>/<run_id>/``: ``config.json``, ``environment.json``, ``trainer_state.json``,
-``predictions.csv`` (the word-level contract) and, last, ``metrics.json``. A run whose
-``metrics.json`` exists is complete and is skipped unless ``force`` is set.
+``predictions.csv`` (the word-level contract), ``predictions_<name>.csv`` for each extra test
+set of the config (#51) and, last, ``metrics.json``. A run whose ``metrics.json`` exists is
+complete and is skipped unless ``force`` is set.
 """
 
 from __future__ import annotations
@@ -34,13 +35,14 @@ from kazner.config import (
     code_state,
     data_fingerprint,
     environment,
+    extra_tests_fingerprint,
     is_local_model,
     model_fingerprint,
     run_id,
     write_run_files,
 )
 from kazner.contract import TRUNCATED_PRED, Predictions, write_predictions
-from kazner.data import build_label2id, read_splits, training_subsample
+from kazner.data import build_label2id, read_iob2, read_splits, training_subsample
 from kazner.evaluate import compute_metrics, evaluate_predictions
 from kazner.methods import build_model
 
@@ -154,6 +156,19 @@ def _tokenize(dataset, tokenizer, label2id, max_len):
     )
 
 
+def _tokenize_words(sentences, tokenizer, max_len):
+    """Model inputs only: an extra test set's labels need not exist in the model's label set."""
+    from datasets import Dataset
+
+    return Dataset.from_dict({"tokens": sentences}).map(
+        lambda batch: tokenizer(
+            list(batch["tokens"]), is_split_into_words=True, truncation=True, max_length=max_len
+        ),
+        batched=True,
+        remove_columns=["tokens"],
+    )
+
+
 def _word_ids(tokenizer, sentences, max_len) -> list[list[int | None]]:
     out: list[list[int | None]] = []
     for start in range(0, len(sentences), 1000):
@@ -181,6 +196,7 @@ def train_one(
     corpus: dict[str, Any],
     data_ref: str = "",
     model_ref: str = "",
+    extra_ref: str = "",
 ) -> dict[str, Any]:
     """Train and evaluate a single seed; returns the metrics written to ``metrics.json``."""
     import torch
@@ -191,7 +207,7 @@ def train_one(
     fp16 = resolve_fp16(t.fp16)
     cuda = torch.cuda.is_available()
 
-    write_run_files(run_dir, run, rid, env, data_ref, model_ref)
+    write_run_files(run_dir, run, rid, env, data_ref, model_ref, extra_ref)
 
     set_all_seeds(run.seed)  # immediately before the model is built, as in the pilot
     built = build_model(
@@ -247,6 +263,21 @@ def train_one(
     test_contract = evaluate_predictions(predictions)
     eval_seconds = time.perf_counter() - start
 
+    # Extra test sets come after KazNERD's, so the KazNERD results are those of a run without
+    # them. Their gold labels are kept as read; scoring them needs a label mapping (#51).
+    extra_tests = {}
+    for name, data in corpus["extra_tests"].items():
+        output = trainer.predict(data["dataset"])
+        extra = word_predictions(
+            output.predictions, data["word_ids"], data["words"], data["gold"], id2label
+        )
+        write_predictions(run_dir / f"predictions_{name}.csv", extra)
+        extra_tests[name] = {
+            "sentences": len(extra.words),
+            "words": extra.n_words,
+            "truncated_words": extra.n_truncated_words,
+        }
+
     trainer.state.save_to_json(str(run_dir / "trainer_state.json"))
     history = [h for h in trainer.state.log_history if "eval_f1" in h]
     best = max(history, key=lambda h: h["eval_f1"]) if history else None
@@ -264,6 +295,7 @@ def train_one(
             for k, v in test_trainer.items()
             if k in ("test_precision", "test_recall", "test_f1", "test_accuracy", "test_loss")
         },
+        **({"extra_tests": extra_tests} if extra_tests else {}),
         "validation_best": best,
         "validation_history": history,
         "trainable_params": built.trainable_params,
@@ -311,6 +343,15 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
     check_word_tokenization(tokenizer, sub_tokens, prefix)
     max_len = cfg.model.max_len
     test_tokens, test_labels = splits["test"]
+    extra_tests = {}
+    for test in cfg.extra_tests:
+        words, gold = read_iob2(cfg.resolve(test.path))
+        extra_tests[test.name] = {
+            "dataset": _tokenize_words(words, tokenizer, max_len),
+            "words": words,
+            "gold": gold,
+            "word_ids": _word_ids(tokenizer, words, max_len),
+        }
     return {
         "model_location": location,
         "tokenizer": tokenizer,
@@ -322,6 +363,7 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
         "test_words": test_tokens,
         "test_gold": test_labels,
         "test_word_ids": _word_ids(tokenizer, test_tokens, max_len),
+        "extra_tests": extra_tests,
     }
 
 
@@ -361,10 +403,11 @@ def run_experiment(
     data_ref = data_fingerprint(cfg.resolve(cfg.data.dir))
     local = is_local_model(cfg.model.name)
     model_ref = model_fingerprint(cfg.model_location()) if local else ""
+    extra_ref = extra_tests_fingerprint(cfg)
 
     results, pending = [], []
     for run in cfg.expand():
-        rid = run_id(run, state.code_ref, data_ref, model_ref)
+        rid = run_id(run, state.code_ref, data_ref, model_ref, extra_ref)
         run_dir = output_root / rid
         if (run_dir / METRICS_FILE).exists() and not force:
             print(f"[skip] {rid} {run.name} seed={run.seed}: already complete")
@@ -379,7 +422,7 @@ def run_experiment(
         if run_dir.exists():
             shutil.rmtree(run_dir)  # incomplete or forced: start clean
         print(f"[run] {rid} {run.name} seed={run.seed} -> {run_dir}")
-        m = train_one(run, rid, run_dir, env, corpus, data_ref, model_ref)
+        m = train_one(run, rid, run_dir, env, corpus, data_ref, model_ref, extra_ref)
         print(
             f"[done] {rid} test F1 contract={m['test_contract']['f1']:.4f} "
             f"trainer={m['test_trainer']['f1']:.4f}"
