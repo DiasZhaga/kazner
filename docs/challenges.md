@@ -566,3 +566,33 @@ three fine-tuning seeds per arm could only detect about 2 points.
   silently using another model. The same mechanism means that any change under `src/kazner`
   that reaches `main` before the freeze changes the IDs. The preregistration must therefore be
   frozen before other code is merged, or the IDs must be recomputed.
+
+## 2026-10-28 — A pull request closed the issue it said it would not close
+
+**Problem.** PR #52 froze the preregistration of #37 but was not meant to close the issue: the
+runs and the analysis come later. Its description said "The PR does not close #37". GitHub
+looks for a closing keyword followed by an issue number and ignores the negation, so merging
+the PR closed #37.
+
+**Resolution.** #37 was reopened at once; its board item had no status to repair. Pull
+request texts that only refer to an issue now say "Refs #N" and keep every closing keyword
+(close, fix, resolve) away from the number. Before a merge, `gh pr view <n> --json
+closingIssuesReferences` shows which issues will be closed.
+
+## 2026-10-29 — Scoring the models on another dataset without retraining for it
+
+**Problem.** WikiANN `kk` is labelled with PER, LOC and ORG, while the models of #32 predict
+KazNERD's 25 types. The #32 runs kept only their predictions, so the models had to be
+retrained to predict WikiANN. A new config key must not change what the training computes,
+because mBERT seed 42 has to reproduce the pilot's F1 bit for bit.
+
+**Decisions.**
+- An extra test set is predicted after the KazNERD test, with its own gold labels written
+  unchanged. Mapping happens only in the analysis, so one set of predictions serves every
+  mapping, including the sensitivity variant for FACILITY.
+- The extra file's content enters the run ID only when a config has extra test sets. Runs
+  without them keep their former hash payload.
+- Every KazNERD type must be listed in the mapping, and the analysis stops at an unlisted
+  type. A forgotten type would otherwise vanish into `O` and quietly change the scores.
+- The conversion reads WikiANN's tag names from the parquet metadata and stops if they differ
+  from the expected order, instead of assuming the ids.
