@@ -1,0 +1,26 @@
+# Keep the build context small and free of data, outputs and secrets.
+.git
+.github
+.worktrees
+.venv
+.venv-gpu
+venv
+.env
+**/__pycache__
+**/*.py[cod]
+*.egg-info
+build
+dist
+.pytest_cache
+.ruff_cache
+.coverage
+coverage.xml
+htmlcov
+data
+models
+runs
+results
+report
+ci
+checkpoint-*
+*.safetensors
