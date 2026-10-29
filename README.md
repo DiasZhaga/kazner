@@ -482,8 +482,9 @@ functions** in `tests/reference/` (oracle tests). Coverage is about 99%.
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
-| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | every pull request, pushes to `main` | `lint` (ruff); `test (ubuntu-latest)`, `test (windows-latest)` (CPU PyTorch, coverage artifact); `smoke` (network tests, cached HF hub) |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | every pull request, pushes to `main` | `lint` (ruff); `test (ubuntu-latest)`, `test (windows-latest)` (CPU PyTorch, coverage artifact); `docker` (tests inside the `test` image, runtime smoke test); `smoke` (network tests, cached HF hub) |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | tags `v*` | tag ↔ version check (PEP 440) → lint + tests → `python -m build` → GitHub Release with wheel, sdist and CHANGELOG notes |
+| [`Jenkinsfile`](Jenkinsfile) (self-hosted, [docs/ci-jenkins.md](docs/ci-jenkins.md)) | every commit on every branch (polling) | test image → lint → unit tests (JUnit, coverage) → runtime image → smoke test → push to Docker Hub (optional) → Kubernetes test Job (`main`) |
 
 `main` is protected: merging requires a pull request with passing `lint` and both `test`
 jobs, and administrators cannot bypass it. Releases are **continuous delivery**: everything is

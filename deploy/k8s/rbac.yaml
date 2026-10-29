@@ -1,0 +1,47 @@
+# Namespace and a deployer account for Jenkins with rights limited to that namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kazner-test
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-deployer
+  namespace: kazner-test
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-deployer-token
+  namespace: kazner-test
+  annotations:
+    kubernetes.io/service-account.name: jenkins-deployer
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: job-runner
+  namespace: kazner-test
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-deployer-job-runner
+  namespace: kazner-test
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-deployer
+    namespace: kazner-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: job-runner

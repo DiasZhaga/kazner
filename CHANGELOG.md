@@ -70,6 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suite, `runtime` stage installs only the wheel and runs `kazner` as a non-root user),
   `.dockerignore`, a synthetic example prediction file in `examples/` shipped in the image, and
   a `docker` CI job that runs the tests in the container and smoke-tests the runtime image.
+- Self-hosted Jenkins pipeline (#54): `Jenkinsfile` (test image, lint, unit tests with JUnit
+  and coverage, runtime image, smoke test, optional Docker Hub push, Kubernetes test Job on
+  `main`); the controller as code in `ci/jenkins/` (pinned Jenkins LTS, Docker CLI, kubectl and
+  plugins, Configuration-as-Code multibranch job polling GitHub, Docker Compose); namespace,
+  ServiceAccount and Role limited to `kazner-test` and the evaluation Job in `deploy/k8s/`;
+  `docs/ci-jenkins.md`.
 
 ### Changed
 - Run IDs hash a fingerprint of the data content (CRLF-normalised SHA-256 of the split files)
