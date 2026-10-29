@@ -16,6 +16,8 @@ pipeline {
     SHORT_SHA = "${env.GIT_COMMIT.take(7)}"
     TEST_IMAGE = "kazner:test-${env.GIT_COMMIT.take(7)}"
     RUNTIME_IMAGE = "kazner:${env.GIT_COMMIT.take(7)}"
+    // Docker names allow only [a-zA-Z0-9_.-]; BUILD_TAG contains the branch name (ci%2F54-...).
+    TEST_CONTAINER = "kazner-tests-${env.GIT_COMMIT.take(7)}-${env.BUILD_NUMBER}"
     EXAMPLE = '/opt/kazner/examples/contract_example.csv'
   }
 
@@ -38,17 +40,17 @@ pipeline {
         // The controller talks to the host engine, so a bind mount would point at a host path;
         // the reports are copied out of the stopped container instead.
         sh '''
-          docker rm -f "kazner-tests-$BUILD_TAG" >/dev/null 2>&1 || true
+          docker rm -f "$TEST_CONTAINER" >/dev/null 2>&1 || true
           set +e
-          docker run --name "kazner-tests-$BUILD_TAG" "$TEST_IMAGE" python -m pytest \
+          docker run --name "$TEST_CONTAINER" "$TEST_IMAGE" python -m pytest \
             -m "not network and not smoke" -q \
             --junitxml=/tmp/reports/junit.xml \
             --cov=kazner --cov-report=term --cov-report=xml:/tmp/reports/coverage.xml
           status=$?
           set -e
           rm -rf reports
-          docker cp "kazner-tests-$BUILD_TAG:/tmp/reports" reports
-          docker rm "kazner-tests-$BUILD_TAG" >/dev/null
+          docker cp "$TEST_CONTAINER:/tmp/reports" reports
+          docker rm "$TEST_CONTAINER" >/dev/null
           exit $status
         '''
       }
