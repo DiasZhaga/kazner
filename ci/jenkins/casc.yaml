@@ -1,0 +1,71 @@
+# Jenkins Configuration-as-Code: security, one executor, credentials and the pipeline job.
+jenkins:
+  systemMessage: "kazner CI: local Jenkins defined in ci/jenkins (see docs/ci-jenkins.md)"
+  numExecutors: 1
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID:-admin}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  globalNodeProperties:
+    - envVars:
+        env:
+          # Docker Hub repository for the optional push stage, e.g. "user/kazner"; empty = skip.
+          - key: DOCKERHUB_REPO
+            value: "${DOCKERHUB_REPO:-}"
+
+unclassified:
+  location:
+    url: "http://localhost:8080/"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # kubeconfig of the namespace-scoped deployer account, created by k8s-setup.sh.
+          - file:
+              scope: GLOBAL
+              id: "kubeconfig-kazner-test"
+              description: "kubeconfig for the kazner-test namespace"
+              fileName: "kubeconfig"
+              secretBytes: "${readFileBase64:/run/secrets/kubeconfig}"
+
+jobs:
+  - script: |
+      multibranchPipelineJob('kazner') {
+        displayName('kazner')
+        description('Every branch of github.com/DiasZhaga/kazner, built from its Jenkinsfile.')
+        branchSources {
+          branchSource {
+            source {
+              git {
+                id('kazner-github')
+                remote('https://github.com/DiasZhaga/kazner.git')
+                traits {
+                  gitBranchDiscovery()
+                }
+              }
+            }
+            buildStrategies {
+              // The first scan finds ~30 old branches: do not build them all at once.
+              skipInitialBuildOnFirstBranchIndexing()
+            }
+          }
+        }
+        triggers {
+          // A webhook cannot reach a Jenkins on localhost, so the repository is polled.
+          periodicFolderTrigger {
+            interval('2m')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(5)
+          }
+        }
+      }

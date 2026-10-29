@@ -1,0 +1,15 @@
+# Top-level plugins, pinned to the versions resolved for Jenkins 2.580.1 on 2026-10-29.
+# jenkins-plugin-cli resolves their dependencies.
+configuration-as-code:2141.v3c81c53ddb_f3
+job-dsl:3732.v9a_c49a_61a_313
+workflow-aggregator:608.v67378e9d3db_1
+workflow-multibranch:842.v3a_b_59b_57b_e6e
+git:5.11.0
+basic-branch-build-strategies:317.v85b_331d6cc42
+credentials-binding:728.v902a_273b_8947
+junit:1455.v5c1b_eed56292
+coverage:3.3497.v3fee733ca_b_35
+pipeline-graph-view:1053.v9df19e6ceed2
+pipeline-stage-view:2.41
+timestamper:1.30
+ws-cleanup:0.49

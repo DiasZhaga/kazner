@@ -1,0 +1,34 @@
+# Test deployment of a pipeline build: run the image's evaluator on the shipped synthetic
+# example as a Kubernetes Job. Jenkins replaces __JOB__ and __IMAGE__.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB__
+  namespace: kazner-test
+  labels:
+    app.kubernetes.io/name: kazner
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kazner
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: kazner
+          image: __IMAGE__
+          # Built by Jenkins in the same Docker engine that Docker Desktop's Kubernetes uses.
+          imagePullPolicy: IfNotPresent
+          args: ["evaluate", "--predictions", "/opt/kazner/examples/contract_example.csv"]
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
