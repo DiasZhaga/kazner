@@ -1,0 +1,27 @@
+# Turkish -> Kazakh transfer (#59, docs/turkish-transfer.md).
+# Arm D: mBERT fine-tuned on KazNERD directly (the pilot's matched baseline).
+# 91 KazNERD training sentences. Fine-tuning settings are the pilot's
+# (run_cross_lingual_twnertc_kaznerd.py) and identical in every arm.
+name: turkish_direct_0p1pct
+data:
+  dir: ../../data/kaznerd
+  train_fraction: 0.001
+  subsample_seed: 42
+model:
+  name: bert-base-multilingual-cased
+  revision: "3f076fdb1ab68d5b2880cb87a0886f315b8146f8"  # pinned Hub commit (#31)
+  max_len: 64
+method:
+  name: full
+training:
+  learning_rate: 2.0e-5
+  epochs: 3
+  train_batch_size: 2
+  eval_batch_size: 16
+  grad_accumulation: 1
+  weight_decay: 0.01
+  fp16: auto
+  load_best_model_at_end: true
+  logging_steps: 50
+seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+output_root: ../../runs

@@ -469,3 +469,27 @@ def test_run_files_record_the_head_mapping(tmp_path):
     config = json.loads((tmp_path / "r" / "config.json").read_text(encoding="utf-8"))
     assert config["model"]["head_mapping"] == "h.yaml"
     assert config["head_mapping_fingerprint"] == "h" * 64
+
+
+def test_turkish_arms_differ_only_in_the_start_model_and_head():
+    """#59: per data size, arms D, T and A share every setting, the pilot's fine-tuning
+    settings and ten seeds; T and A start from the Turkish checkpoint, A with a head mapping."""
+    for size, fraction in (("1pct", 0.01), ("0p1pct", 0.001)):
+        d, t, a = (
+            load_config(ROOT / "configs" / "turkish" / f"{arm}_{size}.yaml")
+            for arm in ("direct", "transfer", "aligned")
+        )
+        for c in (d, t, a):
+            assert (c.data.train_fraction, c.data.subsample_seed) == (fraction, 42)
+            assert (c.method.name, c.model.max_len) == ("full", 64)
+            tr = c.training
+            assert (tr.learning_rate, tr.epochs, tr.train_batch_size) == (2e-5, 3.0, 2)
+            assert (tr.grad_accumulation, tr.eval_batch_size) == (1, 16)
+            assert c.seeds == tuple(range(42, 52))
+            assert (c.data, c.training, c.method) == (d.data, d.training, d.method)
+        assert d.model.name == "bert-base-multilingual-cased" and len(d.model.revision) == 40
+        checkpoint = (ROOT / "models" / "twnertc-coarse10-pilot").resolve()
+        assert Path(t.model_location()) == Path(a.model_location()) == checkpoint
+        assert (t.model.head_mapping, d.model.head_mapping) == (None, None)
+        mapping = ROOT / "configs" / "mappings" / "twnertc_to_kaznerd_head.yaml"
+        assert a.resolve(a.model.head_mapping) == mapping.resolve()
