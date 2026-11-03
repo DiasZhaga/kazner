@@ -454,6 +454,33 @@ are also given by kind of sentence, because WikiANN `kk` mixes running text with
 redirect lines and article first lines. Data, mapping and results:
 [docs/transfer.md](docs/transfer.md).
 
+## Turkish → Kazakh transfer (#59)
+
+```bash
+python scripts/make_twnertc_sets.py --source ../ner-project/data/coarse_train.txt
+kazner train --config configs/turkish/aligned_1pct.yaml
+kazner paired --runs runs --a turkish_transfer_1pct --b turkish_aligned_1pct
+kazner predict --model models/twnertc-coarse10-pilot --data data/kaznerd/IOB2_test.txt \
+  --max-len 64 --out zero_shot.csv
+kazner evaluate --predictions zero_shot.csv --map-gold configs/mappings/kaznerd_to_wikiann.yaml \
+  --map-pred configs/mappings/twnertc_to_wikiann.yaml
+kazner overlap --source data/twnertc/train_subset.txt --target data/kaznerd/IOB2_test.txt
+```
+
+The pilot fine-tuned mBERT on Turkish TWNERTC and then on 1% of KazNERD with a new
+classification head, so only the encoder was transferred.
+- **`model.head_mapping`** (`kazner.head`) copies rows of a local checkpoint's own head into the
+  new head through a mapping file: Turkish PERSON to KazNERD PERSON, LOCATION to LOCATION and
+  GPE, and so on. The other rows stay random, and the file's content enters the run ID.
+- **`kazner paired`** compares two experiments' test F1, paired by seed, with a bootstrap over
+  seeds and test sentences and an exact sign-flip test over seeds.
+- **`kazner predict`** writes a contract file for any saved model, and
+  **`kazner evaluate --map-gold/--map-pred`** scores a model whose labels differ from the test
+  set's (zero-shot transfer).
+- **`kazner overlap`** measures how many of the target text's pieces occur in the source text.
+
+Design, data and results: [docs/turkish-transfer.md](docs/turkish-transfer.md).
+
 ## Reproduction results
 
 Full details and commands: [docs/reproduction.md](docs/reproduction.md).
@@ -512,19 +539,24 @@ src/kazner/
   pretrain.py      kazner pretrain: continued masked-LM training with shared chunks and masks
   compare.py       kazner compare: paired bootstrap comparison of two arms (#37)
   transfer.py      kazner transfer: scores on another dataset through a label mapping (#51)
+  head.py          classification head initialised from a checkpoint's own head (#59)
+  paired.py        kazner paired: test F1 of two experiments, paired by seed (#59)
+  overlap.py       kazner overlap: subword overlap of two corpora (#59)
   config.py        YAML config, run IDs, environment snapshot
   methods.py       adaptation-method registry: full | frozen | lora
   train.py         kazner train: Trainer wiring, contract predictions, idempotent runs
   aggregate.py     kazner aggregate: mean ± sd across seeds
   fragmentation.py kazner fragmentation: errors vs subword fragmentation (B2)
   cli.py           kazner evaluate | fertility | train | aggregate | fragmentation |
-                   extend-vocab | pretrain | compare | transfer
+                   extend-vocab | pretrain | compare | transfer | predict | paired | overlap
 scripts/           download_kaznerd.py, download_kk_corpus.py, download_wikiann_kk.py,
-                   convert_pilot_predictions.py, reproduce_pilot_metrics.py, release_tools.py
+                   make_twnertc_sets.py, convert_pilot_predictions.py,
+                   reproduce_pilot_metrics.py, release_tools.py
 tests/             pytest suite; data/ = synthetic fixtures; reference/ = pilot oracles
 docs/              technology-choices.md, traceability.md, reproduction.md, baselines.md,
                    fragmentation.md, vocabulary.md, preregistration-vocab.md,
-                   causal-test-runbook.md, transfer.md, challenges.md
+                   causal-test-runbook.md, transfer.md, turkish-transfer.md,
+                   challenges.md
 .github/workflows/ ci.yml, release.yml
 ```
 
@@ -539,6 +571,7 @@ Documentation:
 - [preregistration of the causal vocabulary test (#37)](docs/preregistration-vocab.md) and
   [its runbook](docs/causal-test-runbook.md);
 - [transfer to WikiANN with a label mapping](docs/transfer.md);
+- [Turkish → Kazakh transfer with an aligned head](docs/turkish-transfer.md);
 - [decisions and problems log](docs/challenges.md);
 - [changelog](CHANGELOG.md).
 

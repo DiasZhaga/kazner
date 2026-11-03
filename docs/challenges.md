@@ -691,3 +691,33 @@ controller: the new `fix/57-jenkins-first-build` branch was built when the scan 
 without a manual start. Lesson: I had inferred the
 strategy's behaviour from its name and from one observation. I should have checked which
 branches can match at all before adding a safeguard.
+
+## 2026-11-03 — The pilot's TWNERTC "splits" are versions of one corpus (#59)
+
+**Problem.** The pilot's conversion script writes three TWNERTC files, `coarse_train.txt`,
+`coarse_valid.txt` and `coarse_test.txt`, and the cross-lingual script reads them as train,
+validation and test. The script maps them from three different TWNERTC releases: domain-dependent
+noise reduction, domain-independent noise reduction and no noise reduction. These are three
+versions of the same Wikipedia sentences: 98.9% of the "valid" sentences and 98.3% of the
+"test" sentences also occur in "train". A Turkish score on these files would have been measured
+largely on training sentences. The pilot skipped the Turkish evaluation (`skip_turkish_eval`),
+so none of its reported numbers is affected, but the Turkish model's quality was never known.
+
+**Resolution.** #59 uses `coarse_train.txt` alone. `scripts/make_twnertc_sets.py` rebuilds the
+pilot's 10% training subsample with the pilot's sampling rule and draws 5,000 held-out sentences
+from the rest. No held-out sentence equals a training sentence, and each occurs once
+(`kazner.data.heldout_indices`, tested on a corpus with repeats). TWNERTC's labels are silver,
+so the held-out score measures agreement with automatic annotation.
+
+## 2026-11-03 — #59 compares F1 over seeds, not recall on fixed subsets
+
+**Problem.** The issue said the arms would be compared "with `kazner compare`". That command
+was written for #37: it bootstraps exact-span recall on the preregistered entity subsets over
+test sentences. #59's outcome is test F1 over all types, and its arms differ in training seeds
+as much as in test sampling: at 903 training sentences, seed variation is the larger source.
+
+**Resolution.** A new command, `kazner paired`, compares the seed-mean F1 of two experiments,
+paired by seed. Each bootstrap replicate resamples both the seeds and the test sentences, and an
+exact sign-flip test over the per-seed differences is reported as a check. The decision rule
+was written into `docs/turkish-transfer.md` before any run: the aligned head helps if
+Δ(A − T) > 0 with a bootstrap p < 0.05, and that is the only test with a decision.
