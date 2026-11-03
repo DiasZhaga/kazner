@@ -356,3 +356,29 @@ def test_a_run_with_a_head_mapping_records_the_copied_rows(source_ner, tmp_path)
     (plain,) = run_experiment(load_config(configs / "transfer.yaml"))
     assert plain["run_id"] != result["run_id"]
     assert "head_rows_copied" not in plain["metrics"]
+
+
+def test_predict_file_keeps_the_file_labels_and_the_model_labels(source_ner, tmp_path):
+    from kazner.cli import main
+    from kazner.train import predict_file
+
+    test_file = TINY / "IOB2_test.txt"
+    p = predict_file(source_ner, test_file, max_len=16, batch_size=2)
+    words, gold = read_splits(TINY)["test"]
+    assert (p.words, p.gold) == (words, gold)
+    assert {tag for sentence in p.pred for tag in sentence} <= set(SOURCE)
+    assert p.n_truncated_words == 0
+    short = predict_file(source_ner, test_file, max_len=4)
+    assert short.n_truncated_words > 0
+    assert all(short.pred[i][j] == "O" for i, j in _truncated(short))
+
+    out = tmp_path / "zero_shot.csv"
+    args = ["predict", "--model", str(source_ner), "--data", str(test_file), "--out", str(out)]
+    assert main([*args, "--max-len", "16"]) == 0
+    assert read_predictions(out).pred == p.pred
+
+
+def _truncated(predictions):
+    return [
+        (i, j) for i, row in enumerate(predictions.truncated) for j, cut in enumerate(row) if cut
+    ]

@@ -444,3 +444,55 @@ def run_experiment(
         )
         results.append({"run_id": rid, "seed": run.seed, "status": "done", "metrics": m})
     return results
+
+
+# --------------------------------------------------------------------------- prediction
+
+
+def predict_file(
+    model_dir: str | Path,
+    data_path: str | Path,
+    max_len: int = 128,
+    batch_size: int = 16,
+    add_prefix_space: bool | None = None,
+) -> Predictions:
+    """Predict an IOB2 file with a saved token-classification model (``kazner predict``, #59).
+
+    ``gold`` holds the file's labels and ``pred`` the model's own labels, so the two label
+    sets may differ (zero-shot transfer); score them through label mappings. As in training,
+    a word gets the label of its first subword and a word cut off at ``max_len`` gets ``O``.
+    """
+    import tempfile
+
+    import torch
+    from transformers import (
+        AutoModelForTokenClassification,
+        AutoTokenizer,
+        DataCollatorForTokenClassification,
+        Trainer,
+        TrainingArguments,
+    )
+
+    kwargs = {} if add_prefix_space is None else {"add_prefix_space": add_prefix_space}
+    tokenizer = AutoTokenizer.from_pretrained(str(model_dir), **kwargs)
+    model = AutoModelForTokenClassification.from_pretrained(str(model_dir))
+    id2label = {int(i): label for i, label in model.config.id2label.items()}
+    words, gold = read_iob2(data_path)
+    check_word_tokenization(tokenizer, words, add_prefix_space)
+
+    cuda = torch.cuda.is_available()
+    with tempfile.TemporaryDirectory() as tmp:
+        args = TrainingArguments(
+            output_dir=tmp,
+            per_device_eval_batch_size=batch_size,
+            report_to="none",
+            dataloader_pin_memory=cuda,
+            use_cpu=not cuda,
+        )
+        trainer = Trainer(
+            model=model, args=args, data_collator=DataCollatorForTokenClassification(tokenizer)
+        )
+        output = trainer.predict(_tokenize_words(words, tokenizer, max_len))
+    return word_predictions(
+        output.predictions, _word_ids(tokenizer, words, max_len), words, gold, id2label
+    )

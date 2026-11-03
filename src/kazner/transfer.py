@@ -26,6 +26,7 @@ set without such lines every sentence is ``other``.
 from __future__ import annotations
 
 import csv
+import dataclasses
 import json
 import statistics
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -145,6 +146,42 @@ def load_mapping(path: str | Path) -> LabelMapping:
 
 def entity_types(sentences: Iterable[Sequence[str]]) -> set[str]:
     return {tag.partition("-")[2] for tags in sentences for tag in tags if tag != OUTSIDE}
+
+
+def map_predictions(
+    predictions: Predictions,
+    gold_mapping: LabelMapping | None = None,
+    pred_mapping: LabelMapping | None = None,
+) -> Predictions:
+    """Map the gold and/or predicted labels of a contract into one label space (#59).
+
+    For a model whose labels differ from the test set's (zero-shot transfer), each side gets
+    its own mapping. Afterwards both sides must use the same entity types: a mapping's
+    ``target_types``, or the other side's types when that side is not mapped.
+    """
+    gold, pred = predictions.gold, predictions.pred
+    if gold_mapping is not None:
+        gold_mapping.check_covers(entity_types(gold), "the gold side")
+        gold = [gold_mapping.map_tags(s) for s in gold]
+    if pred_mapping is not None:
+        pred_mapping.check_covers(entity_types(pred), "the prediction side")
+        pred = [pred_mapping.map_tags(s) for s in pred]
+    if gold_mapping is not None and pred_mapping is not None:
+        if set(gold_mapping.target_types) != set(pred_mapping.target_types):
+            raise ConfigError(
+                f"mapping: the gold mapping targets {list(gold_mapping.target_types)} but the "
+                f"prediction mapping {list(pred_mapping.target_types)}"
+            )
+    elif gold_mapping is not None or pred_mapping is not None:
+        mapping = gold_mapping or pred_mapping
+        other = pred if gold_mapping is not None else gold
+        foreign = sorted(entity_types(other) - set(mapping.target_types))
+        if foreign:
+            raise ConfigError(
+                f"mapping: the unmapped side has types {foreign} outside target_types "
+                f"{list(mapping.target_types)}"
+            )
+    return dataclasses.replace(predictions, gold=gold, pred=pred)
 
 
 # --------------------------------------------------------------------------- runs and scores

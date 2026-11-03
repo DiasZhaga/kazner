@@ -1,0 +1,11 @@
+# TWNERTC's coarse types -> WikiANN's PER, LOC and ORG (#59). Used for the zero-shot score of
+# the Turkish model on KazNERD: its predictions are mapped with this file and KazNERD's gold
+# labels with kaznerd_to_wikiann.yaml, so both sides share one label space. MISC maps to O.
+source: TWNERTC
+target: WikiANN
+target_types: [PER, LOC, ORG]
+mapping:
+  PERSON: PER
+  LOCATION: LOC
+  ORGANIZATION: ORG
+  MISC: O
