@@ -80,6 +80,9 @@ class ModelConfig:
     #: Hub branch, tag or commit for the tokenizer and the model; ``None`` = default branch.
     #: Pin a commit for reported results. Not allowed for a local directory.
     revision: str | None = None
+    #: Head mapping YAML (``kazner.head``, #59): rows of the local checkpoint's own
+    #: classification head that initialise rows of the new head. ``None`` = a new head only.
+    head_mapping: str | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,9 @@ class RunConfig:
         d["data"].pop("dir")  # a location, not content: the data fingerprint is hashed instead
         if is_local_model(self.model.name):
             d["model"].pop("name")  # likewise: the model fingerprint is hashed instead
+        # A head mapping's content is hashed instead of its path (head_mapping_fingerprint);
+        # runs without one keep their former payload.
+        d["model"].pop("head_mapping")
         if self.extra_tests:
             for test in d["extra_tests"]:
                 test.pop("path")  # the files' content is hashed instead (extra_tests_fingerprint)
@@ -296,6 +302,11 @@ def _validate(cfg: ExperimentConfig) -> None:
         "model.revision",
         "only applies to Hugging Face Hub models, not to a local directory",
     )
+    check(
+        cfg.model.head_mapping is None or is_local_model(cfg.model.name),
+        "model.head_mapping",
+        "needs a local model directory, whose own classification head is copied",
+    )
     check(cfg.method.lora.r > 0, "method.lora.r", "must be positive")
     check(cfg.method.lora.alpha > 0, "method.lora.alpha", "must be positive")
     check(0 <= cfg.method.lora.dropout < 1, "method.lora.dropout", "must be in [0, 1)")
@@ -442,12 +453,30 @@ def extra_tests_fingerprint(cfg: ExperimentConfig) -> str:
     return digest.hexdigest()
 
 
+def head_mapping_fingerprint(cfg: ExperimentConfig) -> str:
+    """SHA-256 of the head mapping file (CRLF normalised); ``""`` without a head mapping."""
+    if cfg.model.head_mapping is None:
+        return ""
+    path = cfg.resolve(cfg.model.head_mapping)
+    if not path.is_file():
+        raise ConfigError(f"model.head_mapping: file {path} does not exist")
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def run_id(
-    run: RunConfig, code_ref: str, data_ref: str = "", model_ref: str = "", extra_ref: str = ""
+    run: RunConfig,
+    code_ref: str,
+    data_ref: str = "",
+    model_ref: str = "",
+    extra_ref: str = "",
+    head_ref: str = "",
 ) -> str:
     """First 12 hex chars of sha256(hashed config + code reference + data and model
     fingerprints); ``model_ref`` is empty for Hub models, which are hashed by name.
-    ``extra_ref`` (extra test sets) enters only when set, so other runs keep their IDs."""
+    ``extra_ref`` (extra test sets) and ``head_ref`` (head mapping) enter only when set, so
+    other runs keep their IDs."""
+    if (run.model.head_mapping is None) != (not head_ref):
+        raise ValueError("head_ref must be given exactly when the run has a head mapping")
     payload = {
         "config": run.hashable_dict(),
         "code": code_ref,
@@ -456,6 +485,8 @@ def run_id(
     }
     if extra_ref:
         payload["extra_tests"] = extra_ref
+    if head_ref:
+        payload["head_mapping"] = head_ref
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:RUN_ID_LENGTH]
 
 
@@ -501,6 +532,7 @@ def write_run_files(
     data_ref: str = "",
     model_ref: str = "",
     extra_ref: str = "",
+    head_ref: str = "",
 ) -> None:
     """Write ``config.json`` (resolved run config) and ``environment.json``."""
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -509,10 +541,13 @@ def write_run_files(
         "data_fingerprint": data_ref,
         "model_fingerprint": model_ref or None,
         **({"extra_tests_fingerprint": extra_ref} if extra_ref else {}),
+        **({"head_mapping_fingerprint": head_ref} if head_ref else {}),
         **run.to_dict(),
     }
     if not run.extra_tests:
         config.pop("extra_tests")
+    if run.model.head_mapping is None:
+        config["model"].pop("head_mapping")
     for name, payload in (("config.json", config), ("environment.json", env)):
         text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         (run_dir / name).write_text(text, encoding="utf-8", newline="\n")

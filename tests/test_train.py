@@ -285,3 +285,74 @@ def test_training_from_a_local_model_directory(tmp_path):
     (configs / "moved.yaml").write_text(json.dumps(raw), encoding="utf-8")
     (moved,) = run_experiment(load_config(configs / "moved.yaml"))
     assert (moved["run_id"], moved["status"]) == (result["run_id"], "skipped")
+
+
+# --- Turkish -> Kazakh transfer (#59) ---------------------------------------------------
+
+SOURCE = ["B-LOC", "B-MISC", "B-PER", "I-LOC", "I-MISC", "I-PER", "O"]
+
+
+@pytest.fixture
+def source_ner(tiny_tokenizer, tmp_path):
+    """A tiny token-classification model over Turkish-style labels, saved with its tokenizer."""
+    torch = pytest.importorskip("torch")
+    from transformers import BertConfig, BertForTokenClassification
+
+    path = tmp_path / "models" / "tr"
+    torch.manual_seed(0)
+    config = BertConfig(
+        vocab_size=len(tiny_tokenizer), hidden_size=16, num_hidden_layers=1,
+        num_attention_heads=2, intermediate_size=32, max_position_embeddings=32,
+        num_labels=len(SOURCE), id2label=dict(enumerate(SOURCE)),
+        label2id={label: i for i, label in enumerate(SOURCE)},
+    )  # fmt: skip
+    BertForTokenClassification(config).save_pretrained(path)
+    tiny_tokenizer.save_pretrained(path)
+    return path
+
+
+def test_a_run_with_a_head_mapping_records_the_copied_rows(source_ner, tmp_path):
+    from kazner.config import load_config
+    from kazner.train import run_experiment
+
+    (tmp_path / "head.yaml").write_text(
+        json.dumps(
+            {
+                "source": "tr",
+                "target": "kk",
+                "outside": True,
+                "mapping": {"PER": ["PERSON"], "LOC": ["LOCATION"], "MISC": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    raw = {
+        "name": "aligned",
+        "data": {"dir": str(TINY)},
+        "model": {"name": "../models/tr", "head_mapping": "../head.yaml", "max_len": 16},
+        "training": {"epochs": 1, "train_batch_size": 2, "eval_batch_size": 2, "fp16": "false"},
+        "seeds": [1],
+        "output_root": "../runs",
+    }
+    (configs / "aligned.yaml").write_text(json.dumps(raw), encoding="utf-8")
+    (result,) = run_experiment(load_config(configs / "aligned.yaml"))
+
+    assert result["metrics"]["head_rows_copied"] == [
+        ["O", "O"],
+        ["B-PER", "B-PERSON"],
+        ["I-PER", "I-PERSON"],
+        ["B-LOC", "B-LOCATION"],
+        ["I-LOC", "I-LOCATION"],
+    ]
+    run_dir = tmp_path / "runs" / result["run_id"]
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    assert config["model"]["head_mapping"] == "../head.yaml"
+    assert len(config["head_mapping_fingerprint"]) == 64
+
+    raw["model"].pop("head_mapping")  # the same run without the mapping is another run
+    (configs / "transfer.yaml").write_text(json.dumps(raw), encoding="utf-8")
+    (plain,) = run_experiment(load_config(configs / "transfer.yaml"))
+    assert plain["run_id"] != result["run_id"]
+    assert "head_rows_copied" not in plain["metrics"]
