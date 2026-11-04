@@ -691,3 +691,24 @@ controller: the new `fix/57-jenkins-first-build` branch was built when the scan 
 without a manual start. Lesson: I had inferred the
 strategy's behaviour from its name and from one observation. I should have checked which
 branches can match at all before adding a safeguard.
+
+## 2026-11-04 — The university GPU is not available; #37 moves to a rented RTX 4090
+
+**Problem.** The preregistration of #37 names the desktop RTX 4090 at Astana IT University as
+the test machine, because the laptop's 6 GB do not fit arm B's pre-training without spilling
+into system memory. When asked on 2026-11-04, the School could not say when access would be
+given: doctoral students have been waiting for it since mid-September. Running the test on the
+laptop would take about 26–30 GPU hours over several nights.
+
+**Resolution.** The test runs on a rented RTX 4090: the same GPU model, rented for one session.
+- **Why this option.** It costs a few US dollars and changes only the machine. Google Colab
+  was the alternative, but its sessions end without warning and the GPU type is not
+  guaranteed, while every run of the test must run on one GPU.
+- **Recorded as deviation D1.** The change is in section 7 of the preregistration, written
+  before any run of #37. The same deviation fixes what happens if the instance is lost: the
+  test starts again rather than mixing runs from two machines.
+- **Runbook.** `docs/causal-test-runbook.md` §7 adds the rental steps:
+  - `tmux`, so the runs survive a closed session;
+  - console output to a log file only, because `kazner train` prints each run's test F1,
+    which must stay unseen until arms A and B are complete;
+  - bringing the results back before the instance is terminated.
