@@ -721,3 +721,20 @@ paired by seed. Each bootstrap replicate resamples both the seeds and the test s
 exact sign-flip test over the per-seed differences is reported as a check. The decision rule
 was written into `docs/turkish-transfer.md` before any run: the aligned head helps if
 Δ(A − T) > 0 with a bootstrap p < 0.05, and that is the only test with a decision.
+
+## 2026-11-05 — The #59 series was interrupted and resumed
+
+**Problem.** The 60 runs of #59 ran detached on the laptop, which had to be moved after 22 runs.
+On this laptop a closed lid puts Windows into Modern Standby, which pauses ordinary processes and
+powers the GPU down; a CUDA process may or may not survive the wake-up. On the restart the next
+morning, the first GPU job, the zero-shot prediction, died at start-up with exit code
+0xC0000409 and no traceback.
+
+**Resolution.**
+- **The stop.** The series was stopped by killing its process tree, and restarted with the same
+  script and code. `kazner train` skips a run whose `metrics.json` exists and deletes an
+  incomplete run directory before running it again. Arm A at 1% therefore resumed at seed 44,
+  and no run mixes two sessions.
+- **The crash.** It happened before the prediction file was written, so the file from the first
+  session stayed in place; it had been written by the same code. Its re-evaluation gave the same
+  F1, 0.5214. The next GPU jobs ran normally, and no training run was affected.
