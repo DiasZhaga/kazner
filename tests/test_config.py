@@ -12,6 +12,7 @@ from kazner.config import (
     data_fingerprint,
     environment,
     extra_tests_fingerprint,
+    head_mapping_fingerprint,
     is_local_model,
     load_config,
     model_fingerprint,
@@ -415,3 +416,80 @@ def test_run_files_record_config_and_environment(tmp_path):
     assert saved_env["code"]["code_ref"] == "abc"
     assert saved_env["packages"]["transformers"] == "5.0.0"
     assert set(saved_env) >= {"python", "platform", "cuda_available", "gpu"}
+    assert "head_mapping" not in config["model"]  # only written when set (#59)
+    assert "head_mapping_fingerprint" not in config
+
+
+# --- head mapping (#59) ----------------------------------------------------------------
+
+
+def test_head_mapping_needs_a_local_model():
+    with pytest.raises(ConfigError, match=r"model\.head_mapping: needs a local model directory"):
+        cfg(**{"model.head_mapping": "m.yaml"})
+    c = cfg(**{"model.name": "./models/tr", "model.head_mapping": "m.yaml"})
+    assert c.model.head_mapping == "m.yaml"
+
+
+def test_head_mapping_enters_the_run_id_by_content_not_by_path(tmp_path):
+    local = {"model.name": "./models/tr"}
+    plain = cfg(**local).expand()[0]
+    assert "head_mapping" not in plain.hashable_dict()["model"]  # former payload kept
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "head.yaml").write_bytes(b"outside: true\n")
+
+    def with_mapping(folder):
+        raw = {**MINIMAL, "model": {"name": "./models/tr", "head_mapping": f"{folder}/head.yaml"}}
+        return parse_config(raw, base_dir=tmp_path)
+
+    a, b = with_mapping("a"), with_mapping("b")
+    assert a.expand()[0].hashable_dict() == plain.hashable_dict()
+    ref = head_mapping_fingerprint(a)
+    assert ref == head_mapping_fingerprint(b) and len(ref) == 64
+    rid = run_id(a.expand()[0], "code", "data", "model", head_ref=ref)
+    assert rid == run_id(b.expand()[0], "code", "data", "model", head_ref=ref)
+    assert rid != run_id(plain, "code", "data", "model")
+    (tmp_path / "b" / "head.yaml").write_bytes(b"outside: true\r\n")
+    assert head_mapping_fingerprint(b) == ref  # line endings do not matter
+    (tmp_path / "b" / "head.yaml").write_bytes(b"outside: false\n")
+    assert head_mapping_fingerprint(b) != ref
+    assert head_mapping_fingerprint(cfg()) == ""
+    with pytest.raises(ValueError, match="head_ref must be given exactly"):
+        run_id(a.expand()[0], "code", "data", "model")
+    with pytest.raises(ValueError, match="head_ref must be given exactly"):
+        run_id(plain, "code", "data", "model", head_ref=ref)
+    with pytest.raises(ConfigError, match="does not exist"):
+        head_mapping_fingerprint(with_mapping("missing"))
+
+
+def test_run_files_record_the_head_mapping(tmp_path):
+    run = cfg(**{"model.name": "./tr", "model.head_mapping": "h.yaml"}).expand()[0]
+    env = environment(CodeState("abc", "git-tree"))
+    write_run_files(tmp_path / "r", run, "0123456789ab", env, "f" * 64, "m" * 64, "", "h" * 64)
+    config = json.loads((tmp_path / "r" / "config.json").read_text(encoding="utf-8"))
+    assert config["model"]["head_mapping"] == "h.yaml"
+    assert config["head_mapping_fingerprint"] == "h" * 64
+
+
+def test_turkish_arms_differ_only_in_the_start_model_and_head():
+    """#59: per data size, arms D, T and A share every setting, the pilot's fine-tuning
+    settings and ten seeds; T and A start from the Turkish checkpoint, A with a head mapping."""
+    for size, fraction in (("1pct", 0.01), ("0p1pct", 0.001)):
+        d, t, a = (
+            load_config(ROOT / "configs" / "turkish" / f"{arm}_{size}.yaml")
+            for arm in ("direct", "transfer", "aligned")
+        )
+        for c in (d, t, a):
+            assert (c.data.train_fraction, c.data.subsample_seed) == (fraction, 42)
+            assert (c.method.name, c.model.max_len) == ("full", 64)
+            tr = c.training
+            assert (tr.learning_rate, tr.epochs, tr.train_batch_size) == (2e-5, 3.0, 2)
+            assert (tr.grad_accumulation, tr.eval_batch_size) == (1, 16)
+            assert c.seeds == tuple(range(42, 52))
+            assert (c.data, c.training, c.method) == (d.data, d.training, d.method)
+        assert d.model.name == "bert-base-multilingual-cased" and len(d.model.revision) == 40
+        checkpoint = (ROOT / "models" / "twnertc-coarse10-pilot").resolve()
+        assert Path(t.model_location()) == Path(a.model_location()) == checkpoint
+        assert (t.model.head_mapping, d.model.head_mapping) == (None, None)
+        mapping = ROOT / "configs" / "mappings" / "twnertc_to_kaznerd_head.yaml"
+        assert a.resolve(a.model.head_mapping) == mapping.resolve()

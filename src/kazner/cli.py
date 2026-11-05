@@ -11,13 +11,24 @@ from kazner import __version__
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> int:
+    from kazner.contract import read_predictions
     from kazner.data import build_label2id, read_iob2
-    from kazner.evaluate import evaluate_file
+    from kazner.evaluate import evaluate_predictions, write_metrics
+    from kazner.transfer import load_mapping, map_predictions
 
     labels = None
     if args.labels_from is not None:
         labels = build_label2id(read_iob2(args.labels_from)[1])[0]
-    metrics = evaluate_file(args.predictions, out_path=args.out, labels=labels)
+    predictions = read_predictions(args.predictions, labels=labels)
+    if args.map_gold is not None or args.map_pred is not None:
+        predictions = map_predictions(
+            predictions,
+            None if args.map_gold is None else load_mapping(args.map_gold),
+            None if args.map_pred is None else load_mapping(args.map_pred),
+        )
+    metrics = evaluate_predictions(predictions)
+    if args.out is not None:
+        write_metrics(args.out, metrics)
     summary = {k: v for k, v in metrics.items() if k != "per_type"}
     print(json.dumps(summary, indent=2))
     return 0
@@ -157,6 +168,76 @@ def _cmd_transfer(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_predict(args: argparse.Namespace) -> int:
+    import os
+
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    from kazner.contract import write_predictions
+    from kazner.train import predict_file
+
+    predictions = predict_file(
+        args.model,
+        args.data,
+        max_len=args.max_len,
+        batch_size=args.batch_size,
+        add_prefix_space=True if args.add_prefix_space else None,
+    )
+    write_predictions(args.out, predictions)
+    summary = {
+        "sentences": len(predictions.words),
+        "words": predictions.n_words,
+        "truncated_words": predictions.n_truncated_words,
+        "predicted_labels": sorted({tag for s in predictions.pred for tag in s}),
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_paired(args: argparse.Namespace) -> int:
+    from kazner.paired import format_paired, paired, select_runs, write_paired
+
+    def types(text: str | None) -> list[str] | None:
+        return None if text is None else [t.strip() for t in text.split(",") if t.strip()]
+
+    report = paired(
+        select_runs(args.runs, args.a),
+        select_runs(args.runs, args.b),
+        types=types(args.types),
+        exclude_types=types(args.exclude_types),
+        replicates=args.bootstrap,
+        seed=args.seed,
+    )
+    report = {"a_name": args.a, "b_name": args.b, **report}
+    if args.out is not None:
+        write_paired(args.out, report)
+    print(format_paired(report, args.a, args.b))
+    return 0
+
+
+def _cmd_overlap(args: argparse.Namespace) -> int:
+    from transformers import AutoTokenizer
+
+    from kazner.data import read_iob2
+    from kazner.overlap import format_overlap, piece_overlap
+
+    kwargs = {} if args.revision is None else {"revision": args.revision}
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, **kwargs)
+    source_words = read_iob2(args.source)[0]
+    target_words, target_labels = read_iob2(args.target)
+    report = {
+        "tokenizer": {"name": args.tokenizer, "revision": args.revision},
+        "source_file": str(args.source),
+        "target_file": str(args.target),
+        **piece_overlap(tokenizer, source_words, target_words, target_labels),
+    }
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+        args.out.write_text(text, encoding="utf-8", newline="\n")
+    print(format_overlap(report))
+    return 0
+
+
 def _cmd_extend_vocab(args: argparse.Namespace) -> int:
     from kazner.vocab import extend_vocabulary, read_pieces
 
@@ -194,6 +275,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--labels-from",
         type=Path,
         help="IOB2 train file; its labels become the known label set (default: IOB2 syntax)",
+    )
+    evaluate.add_argument(
+        "--map-gold", type=Path, help="label mapping YAML applied to the gold labels (#59)"
+    )
+    evaluate.add_argument(
+        "--map-pred", type=Path, help="label mapping YAML applied to the predicted labels (#59)"
     )
     evaluate.set_defaults(func=_cmd_evaluate)
 
@@ -370,6 +457,56 @@ def build_parser() -> argparse.ArgumentParser:
     transfer.add_argument("--seed", type=int, default=0, help="bootstrap random seed")
     transfer.add_argument("--out", type=Path, help="write transfer.json and transfer.csv here")
     transfer.set_defaults(func=_cmd_transfer)
+
+    predict = commands.add_parser(
+        "predict",
+        help="predict an IOB2 file with a saved token-classification model (#59)",
+        description="Writes a contract CSV with the file's labels as gold and the model's own "
+        "labels as predictions (first subword per word; words cut off at --max-len get O).",
+    )
+    predict.add_argument("--model", type=Path, required=True, help="saved model directory")
+    predict.add_argument("--data", type=Path, required=True, help="IOB2 file")
+    predict.add_argument("--out", type=Path, required=True, help="contract CSV to write")
+    predict.add_argument("--max-len", type=int, default=128, help="subword tokens per sentence")
+    predict.add_argument("--batch-size", type=int, default=16, help="sentences per batch")
+    predict.add_argument(
+        "--add-prefix-space",
+        action="store_true",
+        help="create the tokenizer with add_prefix_space=True (byte-level BPE, e.g. RoBERTa)",
+    )
+    predict.set_defaults(func=_cmd_predict)
+
+    pair = commands.add_parser(
+        "paired",
+        help="paired comparison of two experiments' test F1 over seeds (#59)",
+        description="Delta in seed-mean test F1 (experiment B minus A, paired by seed), with a "
+        "bootstrap over seeds and test sentences and an exact sign-flip test over seeds.",
+    )
+    pair.add_argument("--runs", type=Path, required=True, help="directory with run folders")
+    pair.add_argument("--a", required=True, help="experiment name of arm A (config 'name')")
+    pair.add_argument("--b", required=True, help="experiment name of arm B")
+    restrict = pair.add_mutually_exclusive_group()
+    restrict.add_argument("--types", help="comma-separated entity types to score (others -> O)")
+    restrict.add_argument("--exclude-types", help="comma-separated entity types to set to O")
+    pair.add_argument("--bootstrap", type=int, default=10000, help="bootstrap replicates")
+    pair.add_argument("--seed", type=int, default=0, help="bootstrap random seed")
+    pair.add_argument("--out", type=Path, help="write the JSON report here")
+    pair.set_defaults(func=_cmd_paired)
+
+    over = commands.add_parser(
+        "overlap",
+        help="subword overlap of a target IOB2 corpus with a source corpus (#59)",
+        description="Shares of the target's piece types, piece tokens, words and word types "
+        "that also occur in the source, for all words and for gold entity words.",
+    )
+    over.add_argument("--source", type=Path, required=True, help="source IOB2 file")
+    over.add_argument("--target", type=Path, required=True, help="target IOB2 file")
+    over.add_argument(
+        "--tokenizer", default="bert-base-multilingual-cased", help="Hugging Face name or path"
+    )
+    over.add_argument("--revision", help="Hub revision of the tokenizer")
+    over.add_argument("--out", type=Path, help="write the JSON report here")
+    over.set_defaults(func=_cmd_overlap)
     return parser
 
 

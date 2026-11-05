@@ -36,6 +36,7 @@ from kazner.config import (
     data_fingerprint,
     environment,
     extra_tests_fingerprint,
+    head_mapping_fingerprint,
     is_local_model,
     model_fingerprint,
     run_id,
@@ -44,6 +45,7 @@ from kazner.config import (
 from kazner.contract import TRUNCATED_PRED, Predictions, write_predictions
 from kazner.data import build_label2id, read_iob2, read_splits, training_subsample
 from kazner.evaluate import compute_metrics, evaluate_predictions
+from kazner.head import prepare_head_init
 from kazner.methods import build_model
 
 METRICS_FILE = "metrics.json"
@@ -197,6 +199,7 @@ def train_one(
     data_ref: str = "",
     model_ref: str = "",
     extra_ref: str = "",
+    head_ref: str = "",
 ) -> dict[str, Any]:
     """Train and evaluate a single seed; returns the metrics written to ``metrics.json``."""
     import torch
@@ -207,11 +210,17 @@ def train_one(
     fp16 = resolve_fp16(t.fp16)
     cuda = torch.cuda.is_available()
 
-    write_run_files(run_dir, run, rid, env, data_ref, model_ref, extra_ref)
+    write_run_files(run_dir, run, rid, env, data_ref, model_ref, extra_ref, head_ref)
 
     set_all_seeds(run.seed)  # immediately before the model is built, as in the pilot
+    head_init = corpus["head_init"]
     built = build_model(
-        run.method, corpus["model_location"], label2id, id2label, revision=run.model.revision
+        run.method,
+        corpus["model_location"],
+        label2id,
+        id2label,
+        revision=run.model.revision,
+        head_init=head_init,
     )
 
     args = TrainingArguments(
@@ -296,6 +305,7 @@ def train_one(
             if k in ("test_precision", "test_recall", "test_f1", "test_accuracy", "test_loss")
         },
         **({"extra_tests": extra_tests} if extra_tests else {}),
+        **({"head_rows_copied": [list(p) for p in head_init.pairs]} if head_init else {}),
         "validation_best": best,
         "validation_history": history,
         "trainable_params": built.trainable_params,
@@ -352,8 +362,12 @@ def prepare_corpus(cfg: ExperimentConfig) -> dict[str, Any]:
             "gold": gold,
             "word_ids": _word_ids(tokenizer, words, max_len),
         }
+    head_init = None
+    if cfg.model.head_mapping is not None:
+        head_init = prepare_head_init(cfg.resolve(cfg.model.head_mapping), location, label2id)
     return {
         "model_location": location,
+        "head_init": head_init,
         "tokenizer": tokenizer,
         "label2id": label2id,
         "id2label": id2label,
@@ -404,10 +418,11 @@ def run_experiment(
     local = is_local_model(cfg.model.name)
     model_ref = model_fingerprint(cfg.model_location()) if local else ""
     extra_ref = extra_tests_fingerprint(cfg)
+    head_ref = head_mapping_fingerprint(cfg)
 
     results, pending = [], []
     for run in cfg.expand():
-        rid = run_id(run, state.code_ref, data_ref, model_ref, extra_ref)
+        rid = run_id(run, state.code_ref, data_ref, model_ref, extra_ref, head_ref)
         run_dir = output_root / rid
         if (run_dir / METRICS_FILE).exists() and not force:
             print(f"[skip] {rid} {run.name} seed={run.seed}: already complete")
@@ -422,10 +437,62 @@ def run_experiment(
         if run_dir.exists():
             shutil.rmtree(run_dir)  # incomplete or forced: start clean
         print(f"[run] {rid} {run.name} seed={run.seed} -> {run_dir}")
-        m = train_one(run, rid, run_dir, env, corpus, data_ref, model_ref, extra_ref)
+        m = train_one(run, rid, run_dir, env, corpus, data_ref, model_ref, extra_ref, head_ref)
         print(
             f"[done] {rid} test F1 contract={m['test_contract']['f1']:.4f} "
             f"trainer={m['test_trainer']['f1']:.4f}"
         )
         results.append({"run_id": rid, "seed": run.seed, "status": "done", "metrics": m})
     return results
+
+
+# --------------------------------------------------------------------------- prediction
+
+
+def predict_file(
+    model_dir: str | Path,
+    data_path: str | Path,
+    max_len: int = 128,
+    batch_size: int = 16,
+    add_prefix_space: bool | None = None,
+) -> Predictions:
+    """Predict an IOB2 file with a saved token-classification model (``kazner predict``, #59).
+
+    ``gold`` holds the file's labels and ``pred`` the model's own labels, so the two label
+    sets may differ (zero-shot transfer); score them through label mappings. As in training,
+    a word gets the label of its first subword and a word cut off at ``max_len`` gets ``O``.
+    """
+    import tempfile
+
+    import torch
+    from transformers import (
+        AutoModelForTokenClassification,
+        AutoTokenizer,
+        DataCollatorForTokenClassification,
+        Trainer,
+        TrainingArguments,
+    )
+
+    kwargs = {} if add_prefix_space is None else {"add_prefix_space": add_prefix_space}
+    tokenizer = AutoTokenizer.from_pretrained(str(model_dir), **kwargs)
+    model = AutoModelForTokenClassification.from_pretrained(str(model_dir))
+    id2label = {int(i): label for i, label in model.config.id2label.items()}
+    words, gold = read_iob2(data_path)
+    check_word_tokenization(tokenizer, words, add_prefix_space)
+
+    cuda = torch.cuda.is_available()
+    with tempfile.TemporaryDirectory() as tmp:
+        args = TrainingArguments(
+            output_dir=tmp,
+            per_device_eval_batch_size=batch_size,
+            report_to="none",
+            dataloader_pin_memory=cuda,
+            use_cpu=not cuda,
+        )
+        trainer = Trainer(
+            model=model, args=args, data_collator=DataCollatorForTokenClassification(tokenizer)
+        )
+        output = trainer.predict(_tokenize_words(words, tokenizer, max_len))
+    return word_predictions(
+        output.predictions, _word_ids(tokenizer, words, max_len), words, gold, id2label
+    )

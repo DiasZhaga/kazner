@@ -1,0 +1,13 @@
+# Head mapping for Turkish -> Kazakh transfer (#59): rows of the TWNERTC checkpoint's
+# classification head that initialise rows of the new KazNERD head (kazner.head). For each
+# listed pair the B- and I- rows (weight row and bias) are copied; with outside: true the O row
+# too. Every TWNERTC type must be listed. MISC has no clear KazNERD counterpart and copies
+# nothing. All other KazNERD rows keep their random initialisation, as in the pilot.
+source: TWNERTC
+target: KazNERD
+outside: true
+mapping:
+  PERSON: [PERSON]
+  LOCATION: [LOCATION, GPE]   # TWNERTC's LOCATION covers countries and cities (KazNERD: GPE)
+  ORGANIZATION: [ORGANISATION]
+  MISC: []

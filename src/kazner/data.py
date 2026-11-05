@@ -105,6 +105,30 @@ def sample_indices(n_sentences: int, fraction: float, seed: int) -> list[int]:
     return sorted(indices[:sample_size])
 
 
+def heldout_indices(
+    sentences: Sentences, fraction: float, seed: int, size: int, heldout_seed: int
+) -> tuple[list[int], list[int]]:
+    """The training subsample of :func:`sample_indices` and a held-out sample beside it (#59).
+
+    The held-out sentences are drawn from the rest of the file (``size`` of them, with
+    ``heldout_seed``), never one whose words equal a training sentence's, and each distinct
+    sentence at most once. TWNERTC repeats sentences, so this keeps the training text out of
+    the held-out set. Both index lists are sorted.
+    """
+    train = sample_indices(len(sentences), fraction, seed)
+    in_train = set(train)
+    seen = {tuple(sentences[i]) for i in train}
+    candidates = []
+    for i, words in enumerate(sentences):
+        key = tuple(words)
+        if i not in in_train and key not in seen:
+            seen.add(key)  # later copies of this sentence are skipped
+            candidates.append(i)
+    if size > len(candidates):
+        raise ValueError(f"only {len(candidates)} sentences can be held out, {size} requested")
+    return train, sorted(random.Random(heldout_seed).sample(candidates, size))
+
+
 def sample_fraction(
     tokens: Sentences, labels: Sentences, fraction: float, seed: int
 ) -> tuple[Sentences, Sentences]:

@@ -13,6 +13,7 @@ from kazner.data import (
     build_label2id,
     download_kaznerd,
     download_wikiann_kk,
+    heldout_indices,
     read_iob2,
     read_splits,
     sample_fraction,
@@ -173,6 +174,25 @@ def test_invalid_fraction_is_rejected(fraction):
 def test_sample_fraction_rejects_mismatched_lengths():
     with pytest.raises(ValueError, match="2 token sentences but 1 label"):
         sample_fraction([["a"], ["b"]], [["O"]], 0.5, seed=1)
+
+
+def test_heldout_sentences_stay_apart_from_the_training_text():
+    """#59: TWNERTC repeats sentences; no held-out sentence may equal a training one."""
+    sentences = [[f"w{i % 12}"] for i in range(40)]  # 12 distinct sentences, repeated
+    train, heldout = heldout_indices(sentences, 0.1, seed=42, size=5, heldout_seed=0)
+    assert train == sample_indices(40, 0.1, 42)  # the pilot's training subsample
+    assert heldout == sorted(heldout) and not set(heldout) & set(train)
+    train_text = {tuple(sentences[i]) for i in train}
+    held_text = [tuple(sentences[i]) for i in heldout]
+    assert not set(held_text) & train_text
+    assert len(set(held_text)) == len(held_text)  # each distinct sentence once
+    again = heldout_indices(sentences, 0.1, seed=42, size=5, heldout_seed=0)
+    assert again == (train, heldout)
+    assert heldout_indices(sentences, 0.1, seed=42, size=5, heldout_seed=1)[1] != heldout
+    free = 12 - len(train_text)
+    assert len(heldout_indices(sentences, 0.1, 42, free, 0)[1]) == free
+    with pytest.raises(ValueError, match=f"only {free} sentences can be held out"):
+        heldout_indices(sentences, 0.1, 42, free + 1, 0)
 
 
 # --- download_kaznerd ------------------------------------------------------------------

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from kazner.config import MethodConfig
+from kazner.head import HeadInit
 
 #: Parameters of the inactive original module inside PEFT's ``ModulesToSaveWrapper``.
 #: With ``TaskType.TOKEN_CLS`` PEFT trains a copy of the classifier (``modules_to_save``)
@@ -75,9 +76,11 @@ def build_model(
     label2id: Mapping[str, int],
     id2label: Mapping[int, str],
     revision: str | None = None,
+    head_init: HeadInit | None = None,
 ) -> BuiltModel:
     """Create a token-classification model for ``model_name`` (a Hub ID at ``revision``, or a
-    local directory) and adapt it with ``method``."""
+    local directory) and adapt it with ``method``. ``head_init`` copies rows of the
+    checkpoint's own head into the new head before the method is applied (#59)."""
     if method.name not in _REGISTRY:
         raise ValueError(
             f"unknown adaptation method {method.name!r}; registered: {registered_methods()}"
@@ -96,6 +99,8 @@ def build_model(
         # as the pilot's cross-lingual pipeline did. mBERT has no head, so nothing changes.
         ignore_mismatched_sizes=True,
     )
+    if head_init is not None:
+        head_init.apply(model, label2id)
     model = _REGISTRY[method.name](model, method)
     return BuiltModel(model, *count_parameters(model))
 

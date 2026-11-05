@@ -15,6 +15,7 @@ from kazner.transfer import (
     entity_counts,
     load_mapping,
     load_transfer_run,
+    map_predictions,
     parse_mapping,
     recall_by_pieces,
     score_run,
@@ -246,3 +247,59 @@ def test_cli_writes_json_and_csv(tmp_path, capsys):
     steps = ["kaznerd", "kaznerd_mapped", "wiki", "wiki/other", "wiki/other_unique"]
     assert [r["step"] for r in rows] == steps
     assert rows[2]["n_runs"] == "2" and rows[2]["f1_ci_low"] != ""
+
+
+# --- mapped scoring of a zero-shot prediction file (#59) -------------------------------
+
+
+def zero_shot_predictions():
+    """KazNERD gold labels, TWNERTC-style predictions of a Turkish model."""
+    return Predictions(
+        sentence_ids=[0, 1],
+        words=[["Асан", "Алматыға", "барды"], ["Кеше", "Астана", "банкі"]],
+        gold=[["B-PERSON", "B-GPE", "O"], ["B-DATE", "B-ORGANISATION", "I-ORGANISATION"]],
+        pred=[["B-PERSON", "B-LOCATION", "O"], ["B-MISC", "B-LOCATION", "O"]],
+    )
+
+
+def test_shipped_twnertc_mapping_lists_every_twnertc_type():
+    m = load_mapping(ROOT / "configs" / "mappings" / "twnertc_to_wikiann.yaml")
+    assert dict(m.types) == {"PERSON": "PER", "LOCATION": "LOC", "ORGANIZATION": "ORG", "MISC": "O"}
+    assert m.target_types == ("PER", "LOC", "ORG")
+
+
+def test_map_predictions_puts_both_sides_in_one_label_space():
+    kk = load_mapping(ROOT / "configs" / "mappings" / "kaznerd_to_wikiann.yaml")
+    tr = load_mapping(ROOT / "configs" / "mappings" / "twnertc_to_wikiann.yaml")
+    mapped = map_predictions(zero_shot_predictions(), kk, tr)
+    assert mapped.gold == [["B-PER", "B-LOC", "O"], ["O", "B-ORG", "I-ORG"]]
+    assert mapped.pred == [["B-PER", "B-LOC", "O"], ["O", "B-LOC", "O"]]
+    assert mapped.words == zero_shot_predictions().words
+    # gold PER, LOC, ORG; predicted PER, LOC, LOC: 2 correct of 3 and 3
+    assert compute_metrics(mapped.gold, mapped.pred)["f1"] == pytest.approx(2 / 3)
+
+
+def test_map_predictions_checks_coverage_and_label_spaces():
+    kk = load_mapping(ROOT / "configs" / "mappings" / "kaznerd_to_wikiann.yaml")
+    tr = load_mapping(ROOT / "configs" / "mappings" / "twnertc_to_wikiann.yaml")
+    with pytest.raises(ConfigError, match="the prediction side contains types it does not list"):
+        map_predictions(zero_shot_predictions(), kk, kk)
+    with pytest.raises(ConfigError, match=r"unmapped side has types \['DATE', 'GPE'"):
+        map_predictions(zero_shot_predictions(), None, tr)
+    other = parse_mapping({**RAW, "target_types": ["PER", "LOC"], "mapping": {
+        "PERSON": "PER", "LOCATION": "LOC", "ORGANIZATION": "O", "MISC": "O"}})  # fmt: skip
+    with pytest.raises(ConfigError, match="the gold mapping targets"):
+        map_predictions(zero_shot_predictions(), kk, other)
+
+
+def test_evaluate_cli_maps_gold_and_predictions(tmp_path, capsys):
+    path = write_predictions(tmp_path / "zero_shot.csv", zero_shot_predictions())
+    mappings = ROOT / "configs" / "mappings"
+    args = ["evaluate", "--predictions", str(path), "--out", str(tmp_path / "m.json")]
+    maps = ["--map-gold", str(mappings / "kaznerd_to_wikiann.yaml")]
+    maps += ["--map-pred", str(mappings / "twnertc_to_wikiann.yaml")]
+    assert main([*args, *maps]) == 0
+    metrics = json.loads((tmp_path / "m.json").read_text(encoding="utf-8"))
+    assert metrics["f1"] == pytest.approx(2 / 3)
+    assert set(metrics["per_type"]) == {"PER", "LOC", "ORG"}
+    assert '"f1": 0.6666' in capsys.readouterr().out

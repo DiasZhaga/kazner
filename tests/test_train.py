@@ -285,3 +285,100 @@ def test_training_from_a_local_model_directory(tmp_path):
     (configs / "moved.yaml").write_text(json.dumps(raw), encoding="utf-8")
     (moved,) = run_experiment(load_config(configs / "moved.yaml"))
     assert (moved["run_id"], moved["status"]) == (result["run_id"], "skipped")
+
+
+# --- Turkish -> Kazakh transfer (#59) ---------------------------------------------------
+
+SOURCE = ["B-LOC", "B-MISC", "B-PER", "I-LOC", "I-MISC", "I-PER", "O"]
+
+
+@pytest.fixture
+def source_ner(tiny_tokenizer, tmp_path):
+    """A tiny token-classification model over Turkish-style labels, saved with its tokenizer."""
+    torch = pytest.importorskip("torch")
+    from transformers import BertConfig, BertForTokenClassification
+
+    path = tmp_path / "models" / "tr"
+    torch.manual_seed(0)
+    config = BertConfig(
+        vocab_size=len(tiny_tokenizer), hidden_size=16, num_hidden_layers=1,
+        num_attention_heads=2, intermediate_size=32, max_position_embeddings=32,
+        num_labels=len(SOURCE), id2label=dict(enumerate(SOURCE)),
+        label2id={label: i for i, label in enumerate(SOURCE)},
+    )  # fmt: skip
+    BertForTokenClassification(config).save_pretrained(path)
+    tiny_tokenizer.save_pretrained(path)
+    return path
+
+
+def test_a_run_with_a_head_mapping_records_the_copied_rows(source_ner, tmp_path):
+    from kazner.config import load_config
+    from kazner.train import run_experiment
+
+    (tmp_path / "head.yaml").write_text(
+        json.dumps(
+            {
+                "source": "tr",
+                "target": "kk",
+                "outside": True,
+                "mapping": {"PER": ["PERSON"], "LOC": ["LOCATION"], "MISC": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    raw = {
+        "name": "aligned",
+        "data": {"dir": str(TINY)},
+        "model": {"name": "../models/tr", "head_mapping": "../head.yaml", "max_len": 16},
+        "training": {"epochs": 1, "train_batch_size": 2, "eval_batch_size": 2, "fp16": "false"},
+        "seeds": [1],
+        "output_root": "../runs",
+    }
+    (configs / "aligned.yaml").write_text(json.dumps(raw), encoding="utf-8")
+    (result,) = run_experiment(load_config(configs / "aligned.yaml"))
+
+    assert result["metrics"]["head_rows_copied"] == [
+        ["O", "O"],
+        ["B-PER", "B-PERSON"],
+        ["I-PER", "I-PERSON"],
+        ["B-LOC", "B-LOCATION"],
+        ["I-LOC", "I-LOCATION"],
+    ]
+    run_dir = tmp_path / "runs" / result["run_id"]
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    assert config["model"]["head_mapping"] == "../head.yaml"
+    assert len(config["head_mapping_fingerprint"]) == 64
+
+    raw["model"].pop("head_mapping")  # the same run without the mapping is another run
+    (configs / "transfer.yaml").write_text(json.dumps(raw), encoding="utf-8")
+    (plain,) = run_experiment(load_config(configs / "transfer.yaml"))
+    assert plain["run_id"] != result["run_id"]
+    assert "head_rows_copied" not in plain["metrics"]
+
+
+def test_predict_file_keeps_the_file_labels_and_the_model_labels(source_ner, tmp_path):
+    from kazner.cli import main
+    from kazner.train import predict_file
+
+    test_file = TINY / "IOB2_test.txt"
+    p = predict_file(source_ner, test_file, max_len=16, batch_size=2)
+    words, gold = read_splits(TINY)["test"]
+    assert (p.words, p.gold) == (words, gold)
+    assert {tag for sentence in p.pred for tag in sentence} <= set(SOURCE)
+    assert p.n_truncated_words == 0
+    short = predict_file(source_ner, test_file, max_len=4)
+    assert short.n_truncated_words > 0
+    assert all(short.pred[i][j] == "O" for i, j in _truncated(short))
+
+    out = tmp_path / "zero_shot.csv"
+    args = ["predict", "--model", str(source_ner), "--data", str(test_file), "--out", str(out)]
+    assert main([*args, "--max-len", "16"]) == 0
+    assert read_predictions(out).pred == p.pred
+
+
+def _truncated(predictions):
+    return [
+        (i, j) for i, row in enumerate(predictions.truncated) for j, cut in enumerate(row) if cut
+    ]
