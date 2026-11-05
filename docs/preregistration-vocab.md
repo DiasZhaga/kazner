@@ -236,4 +236,34 @@ intended:
 
 ## 7. Deviations
 
-None so far.
+### D1. Test machine (recorded 2026-11-04, before any run of #37)
+
+**What changes.** The test runs on a rented NVIDIA GeForce RTX 4090 (24 GB): a Linux container
+from a cloud GPU provider. Sections 2 and 6 name the desktop RTX 4090 at Astana IT University.
+
+**Why.** The university machine is not available. Doctoral students have been waiting for
+access since mid-September 2026, and the School could not say when, or whether, access will be
+given. The paper deadline of 17 December 2026 leaves no time to wait.
+
+**What stays the same:**
+- the GPU model and its 24 GB;
+- Python 3.11, PyTorch 2.5.1 + CUDA 12.1 and the dependency versions pinned in
+  `pyproject.toml`;
+- the code (tag `prereg-37`, code tree `82c1f9d`), the corpus and the extended model;
+- every setting, batch 8 × 4 included, the seeds, the entity subsets and the analysis.
+
+Run IDs do not depend on the machine, so they are those of section 6.
+
+**One instance.** All 62 runs run on the same rented instance: 2 pre-training runs, the 40 NER
+runs of arms A and B, and the 20 reference runs.
+- If the instance is lost before the 40 runs of arms A and B are complete, the test starts
+  again on a new instance, from the pre-training. This section records it, and runs from two
+  instances are never combined.
+- If it is lost later, the missing reference runs are run on a new instance and this section
+  records it. The reference is descriptive (section 2).
+- Each run's `environment.json` records the GPU, the driver and the library versions. The
+  provider, the instance type and the price per hour are added here after the runs.
+
+**Expected effect.** None on the comparisons: arms A and B and the reference run on one machine,
+and laptop runs never enter a comparison (section 2). Absolute F1 values may differ in the last
+digits from what another machine would give.
