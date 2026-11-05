@@ -76,7 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measures subword overlap of two corpora; `kazner.data.heldout_indices` and
   `scripts/make_twnertc_sets.py` rebuild the pilot's Turkish training subset and a held-out
   set; configs for three arms at 1% and 0.1% of KazNERD in `configs/turkish/`;
-  `docs/turkish-transfer.md` with the design and the subword overlap.
+  `docs/turkish-transfer.md` with the design, the subword overlap and the results of 60 runs:
+  at 1% of KazNERD the aligned head adds 1.55 F1 points over the pilot's transfer (95% CI
+  +1.00 to +2.09) and at 0.1% it adds 12.8; with a new head, transfer and direct training give
+  the same F1 at 1%.
 - CPU container image (#14): multi-stage `Dockerfile` (`test` stage runs the offline test
   suite, `runtime` stage installs only the wheel and runs `kazner` as a non-root user),
   `.dockerignore`, a synthetic example prediction file in `examples/` shipped in the image, and

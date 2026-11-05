@@ -479,6 +479,16 @@ classification head, so only the encoder was transferred.
   set's (zero-shot transfer).
 - **`kazner overlap`** measures how many of the target text's pieces occur in the source text.
 
+Result over 10 seeds per arm:
+
+| KazNERD train | Direct | Transfer, new head (pilot) | Transfer, aligned head |
+|---|---|---|---|
+| 1% | 0.7336 ± 0.0078 | 0.7329 ± 0.0067 | **0.7484 ± 0.0055** |
+| 0.1% | 0.0811 ± 0.0645 | 0.1796 ± 0.0713 | **0.3075 ± 0.0108** |
+
+At 1% the aligned head adds 1.55 F1 points over the pilot's transfer (95% CI +1.00 to +2.09,
+p = 0.0002). The pilot's gap between transfer and direct training was seed noise.
+
 Design, data and results: [docs/turkish-transfer.md](docs/turkish-transfer.md).
 
 ## Reproduction results
