@@ -51,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prereg-37`: RTX 4090, ten fine-tuning seeds, pilot results, pre-training run IDs; NER
   configs of arms A and B and of the reference in `configs/causal/`; runbook for another GPU
   machine in `docs/causal-test-runbook.md` (#37).
+- Results of the causal vocabulary test in `docs/causal-test-results.md` (#37):
+  - 60 runs on a rented RTX 4090, analysed as preregistered;
+  - H1 is not supported: the extended vocabulary changes recall on unseen, strongly
+    fragmented entities by −0.15 points with full fine-tuning (95% CI −0.99 to +0.67) and by
+    −1.42 with LoRA (Holm p = 0.006);
+  - continued pre-training on Kazakh text itself adds +3.1 and +4.4 points;
+  - deviation D1 completed with the rented machine's details;
+  - runbook section 7.7 records the actual run.
 - Baselines next to mBERT: learning-rate screen configs for mBERT, XLM-R base and KazRoBERTa
   with pinned model commits (`configs/baselines/`), protocol in `docs/baselines.md`; a test
   that every shipped config loads and validates; grid extensions and three-seed configs at the

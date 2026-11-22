@@ -201,3 +201,26 @@ The estimate of section 4 is 30–60 min per pre-training run and 4–8 h for th
 about 5–10 h in all. At USD 0.35–0.90 per hour for an on-demand RTX 4090 (RunPod and Vast.ai,
 autumn 2026), the test costs about USD 2–9. Running arm A's and arm B's NER configs in two
 `tmux` windows after the pre-training (section 4) shortens the rental.
+
+### 7.7 What the actual run on 2026-11-20 showed
+
+The test ran once, on a RunPod RTX 4090 pod; results in `docs/causal-test-results.md`. Points
+for a repeat:
+- **Image.** The PyTorch template ran Ubuntu 24.04 with Python 3.11 already installed, so
+  `apt-get` was not needed. The venv was created with `python3.11 -m venv`, and packages were
+  installed with `uv pip`.
+- **Data transfer.** On a connection of about 100 Mbit/s, `scp` of the data archive took about
+  a minute, and the 1.4 GB results archive came back in seven minutes. Neither needed a cloud
+  drive in between.
+- **CPU preprocessing.** Each pre-training run spends about three hours on one CPU core before
+  the GPU starts, because of a per-chunk `len(tokenizer)` call (see `docs/challenges.md`).
+  Starting both pre-training runs at once lets this phase overlap. Each run's GPU phase then
+  took 45–48 minutes.
+- **NER runs.** About 8 minutes per full fine-tuning run, with two configs running side by
+  side.
+- **No idle GPU between stages.** A script waited for both pre-training runs to exit 0, then
+  started the NER configs of arms A and B side by side, and the reference after them. A second
+  script packed the results as soon as each stage finished. Both wrote to a status file without
+  test scores, so the test results stayed unseen.
+- **Time and cost.** About 8.5 h of rental and USD 7.7, of which about USD 2.8 was GPU idle time
+  during the CPU preprocessing.
