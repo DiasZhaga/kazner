@@ -759,3 +759,56 @@ morning, the first GPU job, the zero-shot prediction, died at start-up with exit
 - **The crash.** It happened before the prediction file was written, so the file from the first
   session stayed in place; it had been written by the same code. Its re-evaluation gave the same
   F1, 0.5214. The next GPU jobs ran normally, and no training run was affected.
+
+## 2026-11-20 — Pre-training spent three hours on the CPU before using the GPU (#37)
+
+**Problem.** On the rented RTX 4090, both pre-training runs of the causal test sat at 100% of
+one CPU core for about three hours before the GPU was used at all. `build_examples` in
+`kazner.pretrain` calls `len(tokenizer)` once per chunk to pass the vocabulary size to the
+masking function. In transformers 5.0.0 that call costs about 25 ms (measured on the pod; the
+batched tokenization of 2,000 chunks takes 0.09 s). With 462,598 chunks this adds up to about
+3.2 hours per run. The pilot
+runs used only 2,000 chunks, so the cost there was under a minute and went unnoticed.
+
+**Resolution.** Not fixed during the test. The code is frozen by the tag `prereg-37`, and any
+change to `src/kazner` changes the run IDs that the preregistration records. A behaviour-
+preserving fix would still have meant a new deviation and new run IDs. Both runs were left to
+finish, and their preprocessing overlapped because they ran at the same time. The cost was
+about USD 2.8 of idle GPU time. The fix, computing the length once outside the loop, belongs
+in a separate issue after the test.
+
+## 2026-11-20 — Running a preregistered test on a rented GPU on a tight budget (#37)
+
+**Problem.** All 62 runs had to finish on one rented instance within a budget of about USD 10.
+- If the balance ran out, the provider would stop the pod and erase its disk.
+- The test results had to stay unseen until arms A and B were complete.
+- The laptop that started everything had to be moved halfway through.
+
+**Resolution.**
+- **Unattended runs.** Everything ran in `tmux` on the pod, with console output written to log
+  files only. A chain script started the next stage when the previous one exited 0, so the GPU
+  never waited for the laptop.
+- **Results safe early.** A packing script archived the 40 runs of arms A and B as soon as they
+  were done, and everything else after the reference.
+- **Blind progress checks.** Progress was followed through a status file, validation F1 and the
+  count of finished runs.
+- **Pre-training order.** The two pre-training runs were started together, so that their slow
+  CPU phases overlapped.
+- **Outcome.** The test cost about USD 7.7. The results were downloaded and checked against
+  their SHA-256 before the pod was terminated.
+
+## 2026-11-22 — The causal test came out negative, and it is reported as preregistered (#37)
+
+**Problem.** The primary hypothesis was not supported. The extended vocabulary gave no gain with
+full fine-tuning, and a significant loss with LoRA. A negative result invites another analysis:
+other subsets, other thresholds, or dropping the arm that "failed".
+
+**Resolution.**
+- **Analysis as frozen.** The analysis is exactly that of section 4 of the preregistration, run
+  with the code of the tag. No other variant was computed before writing it up.
+- **Where the reading comes from.** The interpretation rests on the descriptive comparison with
+  the reference that the preregistration defined in advance. Continued pre-training on Kazakh
+  text gives +3 to +4 recall points on the primary subset, so the deficit of fragmented rare
+  names is one of Kazakh exposure, not of the number of pieces.
+- **Not tested here.** Explanations of why LoRA loses with the new embeddings are labelled as
+  such.
