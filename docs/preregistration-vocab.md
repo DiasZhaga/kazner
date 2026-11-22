@@ -267,3 +267,19 @@ runs of arms A and B, and the 20 reference runs.
 **Expected effect.** None on the comparisons: arms A and B and the reference run on one machine,
 and laptop runs never enter a comparison (section 2). Absolute F1 values may differ in the last
 digits from what another machine would give.
+
+**Recorded after the runs (2026-11-22).**
+- **Instance.** RunPod, one on-demand pod (not spot) with one NVIDIA GeForce RTX 4090 (24 GB,
+  driver 595.112.07), 8 vCPU, 41 GB RAM. All 62 runs ran on it on 2026-11-20; none was lost or
+  repeated.
+- **Price.** USD 0.89 per hour for the GPU plus USD 0.007 for the disk; about 8.5 hours, about
+  USD 7.7 in all.
+- **Image.** Ubuntu 24.04.5 instead of the 22.04 named in the runbook. Python 3.11.18 in a venv,
+  with torch 2.5.1+cu121 and the pinned dependencies, as above.
+- **How the runs were executed** (not a change of what was run):
+  - the two pre-training runs ran concurrently on the GPU, with identical chunks, masks and
+    steps (462,598 chunks, 14,457 steps each);
+  - the NER configs of arms A and B ran side by side, as the runbook allows, and the reference
+    ran after them.
+
+  Details and results: `docs/causal-test-results.md`.
