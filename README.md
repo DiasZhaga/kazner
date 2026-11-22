@@ -390,6 +390,18 @@ named in the preregistration, the reference R from mBERT itself, with ten fine-t
 each. [docs/causal-test-runbook.md](docs/causal-test-runbook.md) is the checklist for running
 them on another GPU machine.
 
+**Result** (60 runs on a rented RTX 4090, 2026-11-20). Exact-span recall on unseen entities with
+more than 3 mBERT pieces per word, mean over ten seeds:
+
+| Method | R: mBERT | A: continued pre-training | B: + 10,000 Kazakh pieces | B − A, 95% CI |
+|---|---|---|---|---|
+| full | 0.790 | 0.821 | 0.819 | −0.15 points [−0.99, +0.67] |
+| LoRA | 0.759 | 0.803 | 0.789 | −1.42 points [−2.36, −0.49], Holm p = 0.006 |
+
+The extended vocabulary does not help: H1 is not supported, and with LoRA it hurts. Continued
+pre-training on Kazakh text itself gives +3.1 and +4.4 points, most on the strongly fragmented
+entities. Details: [docs/causal-test-results.md](docs/causal-test-results.md).
+
 ## Continued pre-training
 
 ```bash
